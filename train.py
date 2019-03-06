@@ -9,17 +9,17 @@ import scipy.io as sio
 from model import AttenVgg
 from utils import visualize_atten_softmax, visualize_atten_sigmoid
 from utils import AvgMeter, accuracy, plot_curve
-from utils import get_data, vizNet, Stats, save_checkpoint,loadweight
+from utils import get_data, vizNet, Stats, save_checkpoint,loadpartweight
 
 import torch.distributed as dist
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "5,6,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 best_prec1 = 0
 
 
 def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of atten-vgg")
-	arg.add_argument('-bs', '--batch_size', help='batch size', default=16)
+	arg.add_argument('-bs', '--batch_size', help='batch size', default=30)
 	arg.add_argument('--store_per_epoch', default=False)
 	arg.add_argument('--epochs', default=60)
 	arg.add_argument('--num_classes', default=9, type=int)
@@ -28,7 +28,7 @@ def arg_pare():
 	arg.add_argument('--img_size', help='the input size', default=224)
 	arg.add_argument('--dir', help='the dataset root', default='/data/wen/Dataset/data_maker/classifier/c9/')
 	arg.add_argument('--print_freq', default=3000, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='viz')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='viz_finetune')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=None, type=str)
@@ -48,6 +48,7 @@ def main():
 	print('\n done \n')
 	# args.distributed = args.world_size > 1
 	model = AttenVgg(input_size=args.img_size, num_class=args.num_classes)
+	model=loadpartweight(model)
 	LR = Learning_rate_generater('step', [40, 50], 120)
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
 

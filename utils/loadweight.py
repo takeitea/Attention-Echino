@@ -4,7 +4,6 @@ load part of the pre-trained parameters
 import os
 import torch
 import torch.utils.model_zoo as model_zoo
-
 model_urls = {
     'vgg11': 'https://download.pytorch.org/models/vgg11-bbd30ac9.pth',
     'vgg13': 'https://download.pytorch.org/models/vgg13-c768596a.pth',
@@ -34,5 +33,23 @@ def loadcheckpoint(model, optimizer, args):
 
 
 def loadpartweight(model):
-	state_dict=model_zoo.load_url(model_urls['vgg16_bn'])
+	old_dict=model.state_dict()
+	new_dict=model_zoo.load_url(model_urls['vgg16_bn'])
+	count_feat=0
+	count_fetch=0
+	skip=0
+	for k,_ in new_dict.items():
+		if 'features' in k:
+			count_feat=count_feat+1
+	for i in range(count_feat):
+		for k in range(i,len(old_dict)):
+			if 'num_batches_tracked' in list(old_dict.keys())[k+skip]:
+				skip+=1
+			if new_dict[list(new_dict.keys())[i]].size()==old_dict[list(old_dict.keys())[k+skip]].size():
+				old_dict[list(old_dict.keys())[k+skip]]=list(new_dict.values())[i]
+				count_fetch+=1
+				break
+	old_dict.update()
+	model.load_state_dict(old_dict)
+	return model
 
