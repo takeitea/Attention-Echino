@@ -18,10 +18,6 @@ def get_data(args):
 	transform_val=trans.Compose([trans.Resize(256),trans.CenterCrop(224),trans.ToTensor(),trans.Normalize(MEANS,STDS)])
 	trainset=torchvision.datasets.ImageFolder(root=args.dir+'train',transform=transform_train)
 	valset=torchvision.datasets.ImageFolder(root=args.dir+'val',transform=transform_val)
-	# if args.distributed:
-	# 	train_sampler=distributed.DistributedSampler(trainset)
-	# else:
-	# 	train_sampler=None
 	trainloader=torch.utils.data.DataLoader(trainset,batch_size=args.batch_size,shuffle=True,
 											num_workers=32,pin_memory=True)
 	valloader=torch.utils.data.DataLoader(valset,batch_size=args.batch_size,shuffle=False,num_workers=32)

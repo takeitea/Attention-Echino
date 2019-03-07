@@ -28,8 +28,8 @@ def arg_pare():
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
 	arg.add_argument('--img_size', help='the input size', default=224)
 	arg.add_argument('--dir', help='the dataset root', default='/data/wen/Dataset/data_maker/classifier/c9/')
-	arg.add_argument('--print_freq', default=3000, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='viz_vgg')
+	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='viz_18')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=None, type=str)
@@ -48,8 +48,9 @@ def main():
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
 	# args.distributed = args.world_size > 1
-	model = AttenVgg(input_size=args.img_size, num_class=args.num_classes,attention=True)
-	model=loadpartweight(model)
+	# model = AttenVgg(input_size=args.img_size, num_class=args.num_classes,attention=True)
+	# model=loadpartweight(model)
+	model=resnet18(pretrained=True,num_classes=9)
 	LR = Learning_rate_generater('step', [40, 50], 120)
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
 
@@ -101,7 +102,7 @@ def train(trainloader, model, criterion, optimizer, epoch):
 	for i, (input, target) in enumerate(trainloader):
 		data_time.update(time.time() - end)
 		input, target = input.cuda(), target.cuda()
-		out,_,_,_ = model(input)
+		out = model(input)
 		loss = criterion(out, target)
 		prec1, prec2 = accuracy(out, target, path=None, topk=(1, 2))
 		losses.update(loss.item(), input.size(0))
@@ -135,7 +136,7 @@ def evaluate(valloader, model, criterion):
 		end = time.time()
 		for i, (input, target) in enumerate(valloader):
 			input, target = input.cuda(), target.cuda()
-			output,_,_,_ = model(input)
+			output= model(input)
 			loss = criterion(output, target)
 
 			prec1, prec2 = accuracy(output, target, path=None, topk=(1, 2))

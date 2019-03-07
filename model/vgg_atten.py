@@ -61,4 +61,4 @@ class AttenVgg(nn.Module):
 		else:
 			c1,c2,c3=None,None,None
 			out=self.cls(torch.squeeze(glob))
-		return [out,c1,c2,c3]
+		return out,c1,c2,c3
