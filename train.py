@@ -14,13 +14,13 @@ from utils import get_data, vizNet, Stats, save_checkpoint,loadpartweight
 
 import torch.distributed as dist
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 best_prec1 = 0
 
 
 def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of atten-vgg")
-	arg.add_argument('-bs', '--batch_size', help='batch size', default=32)
+	arg.add_argument('-bs', '--batch_size', help='batch size', default=16)
 	arg.add_argument('--store_per_epoch', default=False)
 	arg.add_argument('--epochs', default=60)
 	arg.add_argument('--num_classes', default=9, type=int)
@@ -29,7 +29,7 @@ def arg_pare():
 	arg.add_argument('--img_size', help='the input size', default=224)
 	arg.add_argument('--dir', help='the dataset root', default='/data/wen/Dataset/data_maker/classifier/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='viz_18')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='viz_base')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=None, type=str)
@@ -50,10 +50,10 @@ def main():
 	# args.distributed = args.world_size > 1
 	# model = AttenVgg(input_size=args.img_size, num_class=args.num_classes,attention=True)
 	# model=loadpartweight(model)
-	model=resnet18(pretrained=True,num_classes=9)
-	LR = Learning_rate_generater('step', [40, 50], 120)
+	model=resnet18(pretrained=True,num_classes=9).cuda()
+	LR = Learning_rate_generater('step', [20,30 ], 40)
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
-
+	print(args)
 	# plot network
 	# vizNet(model, args.modeldir)
 
@@ -61,8 +61,10 @@ def main():
 	# 	dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url, world_size=args.world_size,rank=0)
 	# 	model.cuda()
 	# 	model = torch.nn.parallel.DistributedDataParallel(model)
-	model=torch.nn.DataParallel(model).cuda()
+	# model=torch.nn.DataParallel(model).cuda()
 	trainloader, valloader = get_data(args)
+
+	# critertion = torch.nn.CrossEntropyLoss(weight=torch.Tensor([5,5,5,1,5,1,1,1,1,])).cuda()
 	critertion = torch.nn.CrossEntropyLoss().cuda()
 	if args.evaluate:
 		evaluate(valloader, model, critertion)
@@ -97,12 +99,13 @@ def train(trainloader, model, criterion, optimizer, epoch):
 	losses = AvgMeter()
 	top1 = AvgMeter()
 	top2 = AvgMeter()
+	model.is_val=True
 	model.train()
 	end = time.time()
 	for i, (input, target) in enumerate(trainloader):
 		data_time.update(time.time() - end)
 		input, target = input.cuda(), target.cuda()
-		out = model(input)
+		out = model(input,target)
 		loss = criterion(out, target)
 		prec1, prec2 = accuracy(out, target, path=None, topk=(1, 2))
 		losses.update(loss.item(), input.size(0))
@@ -131,12 +134,14 @@ def evaluate(valloader, model, criterion):
 	losses = AvgMeter()
 	top1 = AvgMeter()
 	top2 = AvgMeter()
+	model.is_val=True
 	model.eval()
 	with torch.no_grad():
 		end = time.time()
 		for i, (input, target) in enumerate(valloader):
 			input, target = input.cuda(), target.cuda()
-			output= model(input)
+			model=model.cuda()
+			output= model(input,target)
 			loss = criterion(output, target)
 
 			prec1, prec2 = accuracy(output, target, path=None, topk=(1, 2))
