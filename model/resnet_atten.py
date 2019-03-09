@@ -3,6 +3,7 @@ import numpy as np
 from torch.autograd import Variable
 import os
 import cv2
+from torch.nn import LSTM
 import torch.nn.functional as F
 from collections import OrderedDict
 import torch.utils.model_zoo as model_zoo
@@ -182,7 +183,7 @@ class ResNet(nn.Module):
 
 		log2=self.avgpool(out_erase).squeeze()
 
-		return log1+log2
+		return log1,log2
 
 	def add_heatmap2img(self,img,heatmap):
 		heatmap=heatmap*255
@@ -208,10 +209,10 @@ class ResNet(nn.Module):
 			atten_map_normed=torch.squeeze(atten_map_normed)
 		atten_shape=atten_map_normed.size()
 		pos=torch.ge(atten_map_normed,threshold)
-		mask=torch.ones(atten_shape).cuda()
+		mask=torch.ones(atten_shape)
 		mask[pos.data]=0.0
 		mask=torch.unsqueeze(mask,dim=1)
-		erased_feature_maps=feature_maps*mask
+		erased_feature_maps=feature_maps*mask.cuda()
 		return erased_feature_maps
 
 	def normalize_atten_maps(self,atten_maps):
