@@ -103,7 +103,7 @@ class Bottleneck(nn.Module):
 
 class ResNet(nn.Module):
 
-	def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,threshold=0.8,is_val=False):
+	def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,threshold=0.8,is_val=True):
 		super(ResNet, self).__init__()
 		self.threshold=threshold
 		self.is_val=is_val
