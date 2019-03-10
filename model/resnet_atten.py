@@ -103,7 +103,7 @@ class Bottleneck(nn.Module):
 
 class ResNet(nn.Module):
 
-	def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,threshold=0.8,is_val=True):
+	def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,threshold=0.8):
 		super(ResNet, self).__init__()
 		self.threshold=threshold
 		self.is_val=is_val
@@ -173,8 +173,8 @@ class ResNet(nn.Module):
 		# flaten=feat.view(feat.size(0),-1)
 		out=self.cls(x)
 		log1 = self.avgpool(out).squeeze()
-		if self.is_val:
-			_,label=torch.max(log1,dim=1)
+
+		_,label=torch.max(log1,dim=1)
 		self.attention= self.get_atten_map(out,label,True)
 		feat_erase=self.erase_feature_maps(self.attention,x,self.threshold)
 

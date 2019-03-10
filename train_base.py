@@ -4,27 +4,25 @@ import time
 import numpy as np
 import torch.optim as optim
 import os
-import random
 import scipy.io as sio
-from model import AttenVgg
 from model import resnet18
 from utils import visualize_atten_softmax, visualize_atten_sigmoid
 from utils import AvgMeter, accuracy, plot_curve
 from utils import get_data, vizNet, Stats, save_checkpoint,loadpartweight
-
+from loss import HEM_Loss
 import torch.distributed as dist
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3,4,5,6,7"
 best_prec1 = 0
 
 
 def arg_pare():
-	arg = argparse.ArgumentParser(description=" args of atten-vgg")
-	arg.add_argument('-bs', '--batch_size', help='batch size', default=16)
+	arg = argparse.ArgumentParser(description=" args of resnet18")
+	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
 	arg.add_argument('--store_per_epoch', default=False)
-	arg.add_argument('--epochs', default=60)
+	arg.add_argument('--epochs', default=200 )
 	arg.add_argument('--num_classes', default=9, type=int)
-	arg.add_argument('--lr', help='learn rate', default=0.01)
+	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
 	arg.add_argument('--img_size', help='the input size', default=224)
 	arg.add_argument('--dir', help='the dataset root', default='/data/wen/Dataset/data_maker/classifier/c9/')
@@ -32,7 +30,7 @@ def arg_pare():
 	arg.add_argument('--modeldir', help=' the model viz dir ', default='viz_base')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
-	arg.add_argument('--gpu', default=None, type=str)
+	arg.add_argument('--gpu', default=5, type=str)
 	arg.add_argument('--world_size', default=1, type=int, help='number of distributed processes')
 	arg.add_argument('--dist_url', default='tcp://127.0.0.01:123', type=str, help='url used to set up')
 	arg.add_argument('--dist_backend', default='gloo', type=str, help='distributed backend')
@@ -51,8 +49,8 @@ def main():
 	# model = AttenVgg(input_size=args.img_size, num_class=args.num_classes,attention=True)
 	# model=loadpartweight(model)
 	model=resnet18(pretrained=True,num_classes=9).cuda()
-	LR = Learning_rate_generater('step', [20,30 ], 40)
-	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
+	LR = Learning_rate_generater('step', [25,40], 50)
+	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-5)
 	print(args)
 	# plot network
 	# vizNet(model, args.modeldir)
@@ -61,11 +59,12 @@ def main():
 	# 	dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url, world_size=args.world_size,rank=0)
 	# 	model.cuda()
 	# 	model = torch.nn.parallel.DistributedDataParallel(model)
-	# model=torch.nn.DataParallel(model).cuda()
+	model=torch.nn.DataParallel(model,range(args.gpu))
 	trainloader, valloader = get_data(args)
 
 	# critertion = torch.nn.CrossEntropyLoss(weight=torch.Tensor([5,5,5,1,5,1,1,1,1,])).cuda()
-	critertion = torch.nn.CrossEntropyLoss().cuda()
+	# critertion = torch.nn.CrossEntropyLoss().cuda()
+	critertion=torch.nn.CrossEntropyLoss()
 	if args.evaluate:
 		evaluate(valloader, model, critertion)
 		return
@@ -99,15 +98,14 @@ def train(trainloader, model, criterion, optimizer, epoch):
 	losses = AvgMeter()
 	top1 = AvgMeter()
 	top2 = AvgMeter()
-	model.is_val=True
 	model.train()
 	end = time.time()
 	for i, (input, target) in enumerate(trainloader):
 		data_time.update(time.time() - end)
 		input, target = input.cuda(), target.cuda()
-		out = model(input,target)
-		loss = criterion(out, target)
-		prec1, prec2 = accuracy(out, target, path=None, topk=(1, 2))
+		out1= model(input)
+		loss = criterion(out1, target)
+		prec1, prec2 = accuracy(out1, target, path=None, topk=(1, 2))
 		losses.update(loss.item(), input.size(0))
 		top1.update(prec1[0], input.size(0))
 		top2.update(prec2[0], input.size(0))
@@ -134,17 +132,16 @@ def evaluate(valloader, model, criterion):
 	losses = AvgMeter()
 	top1 = AvgMeter()
 	top2 = AvgMeter()
-	model.is_val=True
 	model.eval()
 	with torch.no_grad():
 		end = time.time()
 		for i, (input, target) in enumerate(valloader):
-			input, target = input.cuda(), target.cuda()
-			model=model.cuda()
-			output= model(input,target)
-			loss = criterion(output, target)
 
-			prec1, prec2 = accuracy(output, target, path=None, topk=(1, 2))
+			input, target = input.cuda(), target.cuda()
+			output1= model(input)
+			loss= criterion(output1, target)
+
+			prec1, prec2 = accuracy(output1, target, path=None, topk=(1, 2))
 			losses.update(loss.item(), input.size(0))
 			top1.update(prec1[0], input.size(0))
 			top2.update(prec2[0], input.size(0))
