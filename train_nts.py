@@ -28,7 +28,7 @@ def arg_pare():
 	arg.add_argument('--img_size', help='the input size', default=224)
 	arg.add_argument('--dir', help='the dataset root', default='/data/wen/Dataset/data_maker/classifier/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='viz_nts')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='viz_test')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=5, type=str)

@@ -1,5 +1,5 @@
 from torch import nn
-from .resnet import resnet50
+from .resnet import resnet18
 import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
@@ -12,7 +12,7 @@ PROPOSAL_NUM=6
 class ProposalNet(nn.Module):
 	def __init__(self):
 		super(ProposalNet,self).__init__()
-		self.down1=nn.Conv2d(2048,128,3,1,1)
+		self.down1=nn.Conv2d(512,128,3,1,1)
 		self.down2=nn.Conv2d(128,128,3,1,1)
 		self.down3=nn.Conv2d(128,128,3,2,1)
 
@@ -34,17 +34,17 @@ class ProposalNet(nn.Module):
 class Attention_Net(nn.Module):
 	def __init__(self,topN=4,num_classes=9):
 		super(Attention_Net,self).__init__()
-		self.pretrained_model=resnet50(pretrained=True)
+		self.pretrained_model=resnet18(pretrained=True)
 		self.pretrained_model.avgpool=nn.AdaptiveAvgPool2d(1)
-		self.pretrained_model.fc=nn.Linear(512*4,num_classes)
+		self.pretrained_model.fc=nn.Linear(512,num_classes)
 		self.proposal_net=ProposalNet()
 		self.topN=topN
-		self.concat_net=nn.Linear(2048*(CAT_NUM+1),num_classes)
-		self.partcls_net=nn.Linear(512*4,num_classes)
+		self.concat_net=nn.Linear(512*(CAT_NUM+1),num_classes)
+		self.partcls_net=nn.Linear(512,num_classes)
 		_,edge_anchors,_=generator_default_anchor_maps()
 		# TODO  next line
-		self.pad_size=224
-		self.edge_anchors=(edge_anchors+224).astype(np.int)
+		self.pad_size=112
+		self.edge_anchors=(edge_anchors+112).astype(np.int)
 
 	def forward(self, x):
 		resnet_out,rpn_feature,feature=self.pretrained_model(x)
@@ -67,7 +67,9 @@ class Attention_Net(nn.Module):
 			for j in range(self.topN):
 				[y0,x0,y1,x1]=top_n_cdds[i][j,1:5].astype(np.int)
 				part_imgs[i:i+1,j]=F.interpolate(x_pad[i:i+1,:,y0:y1,x0:x1],size=(224,224),mode='bilinear',align_corners=True)
+
 		part_imgs=part_imgs.view(batch*self.topN,3,224,224)
+
 		_,_,part_features=self.pretrained_model(part_imgs.detach())
 
 		part_feature=part_features.view(batch,self.topN,-1)
@@ -80,3 +82,6 @@ class Attention_Net(nn.Module):
 
 		part_logits=self.partcls_net(part_features).view(batch,self.topN,-1)
 		return [raw_logist,concat_logist,part_logits, top_n_index,top_n_prob]
+
+	def plot_draw_box(self):
+		pass
