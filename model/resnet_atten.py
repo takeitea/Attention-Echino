@@ -106,7 +106,6 @@ class ResNet(nn.Module):
 	def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,threshold=0.8):
 		super(ResNet, self).__init__()
 		self.threshold=threshold
-		self.is_val=is_val
 		self.inplanes = 64
 		self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
 							   bias=False)

@@ -155,13 +155,10 @@ class ResNet(nn.Module):
 		x = self.layer2(x)
 		x = self.layer3(x)
 		x = self.layer4(x)
-		feature1 = x
 		x = self.avgpool(x)
 		x = x.view(x.size(0), -1)
-		# x = nn.Dropout(p=0.5)(x)
-		feature2 = x
 		x = self.fc(x)
-		return x, feature1, feature2
+		return x
 
 
 def resnet18(pretrained=False, **kwargs):
@@ -173,11 +170,11 @@ def resnet18(pretrained=False, **kwargs):
     """
 	model = ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
 	if pretrained:
-		old_dict = model.state_dict()
+		old_dict=model.state_dict()
 		new_dict = model_zoo.load_url(model_urls['resnet18'])
 		for k, v in new_dict.items():
-			if k in old_dict.keys() and old_dict[k].size() == new_dict[k].size():
-				old_dict[k] = v
+			if k in old_dict.keys() and old_dict[k].size()==new_dict[k].size():
+				old_dict[k]=v
 		old_dict.update()
 		model.load_state_dict(old_dict, strict=False)
 	return model

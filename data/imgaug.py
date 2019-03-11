@@ -84,20 +84,6 @@ def preprocess_strategy(dataset='c9'):
 				albumentations.Normalize(mean=[0.275, 0.278, 0.284], std=[0.170, 0.171, 0.173]),
 				albumentations.RandomCrop(224, 224),
 				ToTensor()])
-		# transforms.Resize((256, 256)),
-		# # augmentation.SSDAugmentation(),
-		# transforms.RandomResizedCrop(224),
-		# transforms.RandomHorizontalFlip(),
-		# transforms.ToTensor(),
-		# normalize,
-		# ])
-
-		# val_transforms = transforms.Compose([
-		# transforms.Resize(256),
-		# transforms.CenterCrop(224),
-		# augmentation.SSDAugmentation(),
-		# transforms.ToTensor(),
-		# normalize,
 		val_transforms=albumentations.Compose([
 			albumentations.Resize(256,256),
 			albumentations.CenterCrop(224,224),
