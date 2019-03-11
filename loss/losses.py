@@ -55,6 +55,19 @@ class Affinity_Loss(nn.Module):
 		L_mm = torch.sum(losses * (1 - onehot), -1)
 		return L_mm + rw
 
+class MultiLoss(nn.CrossEntropyLoss):
+	def __init__(self,):
+		super(MultiLoss,self).__init__(None,reduction='elementwise_mean')
+	def forward(self,output, target):
+		loss=torch.autograd.Variable(torch.zeros(1),).cuda()
+
+		output_2=torch.chunk(output,2,dim=-1)
+		for output_ in output_2:
+			parts =torch.chunk(output_,5,dim=1)
+			for part in parts:
+				loss+=F.cross_entropy(part.squeeze(1),target)
+		return loss/(target.size(0)*2*5)
+
 
 class HEM_Loss(nn.CrossEntropyLoss):
 	""""
@@ -96,19 +109,22 @@ class Auxiliary_Loss(nn.CrossEntropyLoss):
 		instance_losses = torch.autograd.Variable(torch.zeros(batch_size)).cuda()
 
 
-def list_loss(logits,targets):
-	temp=F.log_softmax(logits,-1)
-	loss=[-temp[i][targets[i].item()]for i in range(logits.size(0))]
+def list_loss(logits, targets):
+	temp = F.log_softmax(logits, -1)
+	loss = [-temp[i][targets[i].item()] for i in range(logits.size(0))]
 	return torch.stack(loss)
 
-PROPOSAL_NUM=6
-def ranking_loss(score,targets,proposal_num=PROPOSAL_NUM):
-	loss=Variable(torch.zeros(1).cuda())
-	batch_size=score.size(0)
+
+PROPOSAL_NUM = 6
+
+
+def ranking_loss(score, targets, proposal_num=PROPOSAL_NUM):
+	loss = Variable(torch.zeros(1).cuda())
+	batch_size = score.size(0)
 	for i in range(proposal_num):
-		targets_p=(targets>targets[:,i].unsqueeze(1)).type(torch.cuda.FloatTensor)
-		pivot=score[:,i].unsqueeze(1)
-		loss_p=(1-pivot+score)*targets_p
-		loss_p=torch.sum(F.relu(loss_p))
-		loss+=loss_p
-	return loss/batch_size
+		targets_p = (targets > targets[:, i].unsqueeze(1)).type(torch.cuda.FloatTensor)
+		pivot = score[:, i].unsqueeze(1)
+		loss_p = (1 - pivot + score) * targets_p
+		loss_p = torch.sum(F.relu(loss_p))
+		loss += loss_p
+	return loss / batch_size

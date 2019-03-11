@@ -43,12 +43,13 @@ class Attention_Net(nn.Module):
 		self.partcls_net=nn.Linear(512,num_classes)
 		_,edge_anchors,_=generator_default_anchor_maps()
 		# TODO  next line
-		self.pad_size=112
-		self.edge_anchors=(edge_anchors+112).astype(np.int)
+		self.pad_size=224
+		self.edge_anchors=(edge_anchors+224).astype(np.int)
+		self.bilstm=nn.LSTM(512,9,batch_first=True,num_layers=1,bidirectional=True,bias=False)
+
 
 	def forward(self, x):
 		resnet_out,rpn_feature,feature=self.pretrained_model(x)
-
 		x_pad=F.pad(x,(self.pad_size,self.pad_size,self.pad_size,self.pad_size),mode='constant',value=0)
 
 		batch=x.size(0)
@@ -74,14 +75,20 @@ class Attention_Net(nn.Module):
 
 		part_feature=part_features.view(batch,self.topN,-1)
 		part_feature=part_feature[:,:CAT_NUM,...].contiguous()
+		lstm_input=torch.cat([part_feature,feature.unsqueeze(1)],dim=1)
+		bilstm_out1,bilstm_out2=self.bilstm(lstm_input)
 		part_feature=part_feature.view(batch,-1)
 
 		concat_out=torch.cat([part_feature,feature],dim=1)
 		concat_logist=self.concat_net(concat_out)
+
+
+		# all_logits=F.log_softmax(bilstm_out1)
+
 		raw_logist=resnet_out
 
 		part_logits=self.partcls_net(part_features).view(batch,self.topN,-1)
-		return [raw_logist,concat_logist,part_logits, top_n_index,top_n_prob]
+		return [raw_logist,concat_logist,part_logits, top_n_index,top_n_prob,bilstm_out1]
 
 	def plot_draw_box(self):
 		pass

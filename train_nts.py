@@ -10,7 +10,7 @@ from model import Attention_Net
 from utils import visualize_atten_softmax, visualize_atten_sigmoid
 from utils import AvgMeter, accuracy, plot_curve
 from utils import vizNet, Stats, save_checkpoint, loadpartweight
-from loss import list_loss,ranking_loss
+from loss import list_loss,ranking_loss, MultiLoss
 from data import get_data
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "3,4,5,6,7"
@@ -28,7 +28,7 @@ def arg_pare():
 	arg.add_argument('--img_size', help='the input size', default=224)
 	arg.add_argument('--dir', help='the dataset root', default='/data/wen/Dataset/data_maker/classifier/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='viz_test')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='viz_debug')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=5, type=str)
@@ -81,6 +81,7 @@ def main():
 	trainloader, valloader = get_data(args)
 
 	critertion = torch.nn.CrossEntropyLoss().cuda()
+	multiloss=MultiLoss().cuda()
 	if args.evaluate:
 		evaluate(valloader, model, critertion)
 		return
@@ -92,7 +93,7 @@ def main():
 		# if args.distributed:
 		# 	train_sampler.set_epoch(epoch)
 		adjust_learning_rate(opt, LR.lr_factor, epoch)
-		trainObj, top1, top2 = train(trainloader, model, critertion, opt, epoch)
+		trainObj, top1, top2 = train(trainloader, model, critertion, opt, epoch,multiloss)
 		valObj, prec1, prec2 = evaluate(valloader, model, critertion)
 		stats._update(trainObj, top1, top2, valObj, prec1, prec2)
 		filename = []
@@ -108,7 +109,7 @@ def main():
 		sio.savemat(os.path.join(args.modeldir, 'stats.mat'), {'data': stats})
 
 
-def train(trainloader, model, criterion, optimizer, epoch):
+def train(trainloader, model, criterion, optimizer, epoch,multiloss):
 	batch_time = AvgMeter()
 	data_time = AvgMeter()
 	losses = AvgMeter()
@@ -120,19 +121,19 @@ def train(trainloader, model, criterion, optimizer, epoch):
 		data_time.update(time.time() - end)
 		optimizer.zero_grad()
 		input, target = input.cuda(), target.cuda()
-		raw_logits,concat_logits,part_logits,_,top_n_prob = model(input)
+		raw_logits,all_logits,part_logits,_,top_n_prob, lstm_logits = model(input)
 		part_loss=list_loss(part_logits.view(input.size(0)*PROPOSAL_NUM,-1),
 							target.unsqueeze(1).repeat(1,PROPOSAL_NUM).view(-1)).view(input.size(0),PROPOSAL_NUM)
 		raw_loss=criterion(raw_logits,target)
-		concat_loss=criterion(concat_logits,target)
+		concat_loss=criterion(all_logits,target)
 		rank_loss=ranking_loss(top_n_prob,part_loss)
 		partcls_loss=criterion(part_logits.view(input.size(0)*PROPOSAL_NUM,-1),
 							   target.unsqueeze(1).repeat(1,PROPOSAL_NUM).view(-1))
-
-		total_loss=raw_loss+rank_loss+concat_loss+partcls_loss
+		multi_loss=multiloss(lstm_logits,target)
+		total_loss=raw_loss+rank_loss+concat_loss+partcls_loss+multi_loss
 		total_loss.backward()
 		optimizer.step()
-		prec1, prec2 = accuracy(concat_logits, target, path=None, topk=(1, 2))
+		prec1, prec2 = accuracy(all_logits, target, path=None, topk=(1, 2))
 		losses.update(total_loss.item(), input.size(0))
 		top1.update(prec1[0], input.size(0))
 		top2.update(prec2[0], input.size(0))
@@ -161,7 +162,7 @@ def evaluate(valloader, model, criterion):
 		for i, (input, target) in enumerate(valloader):
 
 			input, target = input.cuda(), target.cuda()
-			_,concat_logits,_,_,_ = model(input )
+			_,concat_logits,_,_,_,_ = model(input )
 			loss = criterion(concat_logits, target)
 
 			prec1, prec2 = accuracy(concat_logits, target, path=None, topk=(1, 2))
