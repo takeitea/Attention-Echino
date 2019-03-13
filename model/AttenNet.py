@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 from .anchor import generator_default_anchor_maps,hard_nms
-
+from torchvision import transforms
 CAT_NUM=4
 PROPOSAL_NUM=6
 
@@ -46,7 +46,8 @@ class Attention_Net(nn.Module):
 		self.pad_size=224
 		self.edge_anchors=(edge_anchors+224).astype(np.int)
 		self.bilstm=nn.LSTM(512,9,batch_first=True,num_layers=1,bidirectional=True,bias=False)
-
+		# self.inv_normalize=transforms.Normalize(mean=[-0.275/0.170,-0.278/0.171,-0.284/0.173],
+		# 										std=[1/0.170,1/0.171,1/0.173])
 
 	def forward(self, x):
 		resnet_out,rpn_feature,feature=self.pretrained_model(x)
@@ -57,7 +58,7 @@ class Attention_Net(nn.Module):
 		all_cdds=[ np.concatenate((x.reshape(-1,1),self.edge_anchors.copy(),np.arange(0,len(x)).reshape(-1,1)),axis=1)
 								  for x in rpn_score.data.cpu().numpy()]
 		# TODO the threshold
-		top_n_cdds=[hard_nms(x,topn=self.topN,iou_threshold=0.5) for x in all_cdds]
+		top_n_cdds=[hard_nms(x,topn=self.topN,iou_threshold=0.25) for x in all_cdds]
 		top_n_cdds=np.array(top_n_cdds)
 		top_n_index=top_n_cdds[:,:,-1].astype(np.int)
 		top_n_index=torch.from_numpy(top_n_index).cuda()
@@ -70,12 +71,13 @@ class Attention_Net(nn.Module):
 				part_imgs[i:i+1,j]=F.interpolate(x_pad[i:i+1,:,y0:y1,x0:x1],size=(224,224),mode='bilinear',align_corners=True)
 
 		part_imgs=part_imgs.view(batch*self.topN,3,224,224)
-
+		# self.plot_draw_box(part_imgs)
 		_,_,part_features=self.pretrained_model(part_imgs.detach())
 
 		part_feature=part_features.view(batch,self.topN,-1)
 		part_feature=part_feature[:,:CAT_NUM,...].contiguous()
 		lstm_input=torch.cat([part_feature,feature.unsqueeze(1)],dim=1)
+		self.bilstm.flatten_parameters()
 		bilstm_out1,bilstm_out2=self.bilstm(lstm_input)
 		part_feature=part_feature.view(batch,-1)
 
@@ -88,7 +90,11 @@ class Attention_Net(nn.Module):
 		raw_logist=resnet_out
 
 		part_logits=self.partcls_net(part_features).view(batch,self.topN,-1)
-		return [raw_logist,concat_logist,part_logits, top_n_index,top_n_prob,bilstm_out1]
+		return [raw_logist,concat_logist,part_logits, top_n_index,top_n_prob,bilstm_out1,torch.from_numpy(top_n_cdds).cuda()]
 
-	def plot_draw_box(self):
-		pass
+
+
+
+
+
+

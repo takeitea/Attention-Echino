@@ -53,14 +53,15 @@ def preprocess_strategy(dataset='c9'):
 		])
 	elif dataset.startswith('ImageNet'):
 		train_transforms = transforms.Compose([
+			transforms.Resize(230),
 			transforms.RandomResizedCrop(224),
 			transforms.RandomHorizontalFlip(),
 			transforms.ToTensor(),
 			normalize,
 		])
 		val_transforms = transforms.Compose([
-			transforms.Resize(256),
-			transforms.CenterCrop(244),
+			transforms.Resize(230),
+			transforms.CenterCrop(224),
 			transforms.ToTensor(),
 			normalize,
 		])

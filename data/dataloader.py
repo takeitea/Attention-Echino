@@ -94,6 +94,7 @@ class MyFolder(DatasetFolder):
 		sample = self.loader(path)
 		if self.transform is not None:
 			data = {"image": np.array(sample)}
+			# sample=self.transform(sample)
 			sample = self.transform(**data)['image']
 		if self.target_transform is not None:
 			target = self.target_transform(target)

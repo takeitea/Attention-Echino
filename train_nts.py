@@ -10,12 +10,14 @@ from model import Attention_Net
 from utils import visualize_atten_softmax, visualize_atten_sigmoid
 from utils import AvgMeter, accuracy, plot_curve
 from utils import vizNet, Stats, save_checkpoint, loadpartweight
-from loss import list_loss,ranking_loss, MultiLoss
+from loss import list_loss, ranking_loss, MultiLoss
 from data import get_data
+import cv2
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "3,4,5,6,7"
 best_prec1 = 0
-PROPOSAL_NUM=6
+PROPOSAL_NUM = 6
+
 
 def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of atten-vgg")
@@ -58,7 +60,7 @@ def main():
 		model.load_state_dict(ckpt['state_dict'])
 		start_epoch = ckpt['epoch'] + 1
 
-	LR = Learning_rate_generater('step', [20, 30], 40)
+	LR = Learning_rate_generater('step', [18, 30], 70)
 	params_list = [{'params': model.pretrained_model.parameters(), 'lr': args.lr,
 					'weight_decay': args.weight_decay}, ]
 	params_list.append({'params': model.proposal_net.parameters(), 'lr': args.lr,
@@ -81,7 +83,7 @@ def main():
 	trainloader, valloader = get_data(args)
 
 	critertion = torch.nn.CrossEntropyLoss().cuda()
-	multiloss=MultiLoss().cuda()
+	multiloss = MultiLoss().cuda()
 	if args.evaluate:
 		evaluate(valloader, model, critertion)
 		return
@@ -93,7 +95,7 @@ def main():
 		# if args.distributed:
 		# 	train_sampler.set_epoch(epoch)
 		adjust_learning_rate(opt, LR.lr_factor, epoch)
-		trainObj, top1, top2 = train(trainloader, model, critertion, opt, epoch,multiloss)
+		trainObj, top1, top2 = train(trainloader, model, critertion, opt, epoch, multiloss)
 		valObj, prec1, prec2 = evaluate(valloader, model, critertion)
 		stats._update(trainObj, top1, top2, valObj, prec1, prec2)
 		filename = []
@@ -109,7 +111,7 @@ def main():
 		sio.savemat(os.path.join(args.modeldir, 'stats.mat'), {'data': stats})
 
 
-def train(trainloader, model, criterion, optimizer, epoch,multiloss):
+def train(trainloader, model, criterion, optimizer, epoch, multiloss):
 	batch_time = AvgMeter()
 	data_time = AvgMeter()
 	losses = AvgMeter()
@@ -121,19 +123,21 @@ def train(trainloader, model, criterion, optimizer, epoch,multiloss):
 		data_time.update(time.time() - end)
 		optimizer.zero_grad()
 		input, target = input.cuda(), target.cuda()
-		raw_logits,all_logits,part_logits,_,top_n_prob, lstm_logits = model(input)
-		part_loss=list_loss(part_logits.view(input.size(0)*PROPOSAL_NUM,-1),
-							target.unsqueeze(1).repeat(1,PROPOSAL_NUM).view(-1)).view(input.size(0),PROPOSAL_NUM)
-		raw_loss=criterion(raw_logits,target)
-		concat_loss=criterion(all_logits,target)
-		rank_loss=ranking_loss(top_n_prob,part_loss)
-		partcls_loss=criterion(part_logits.view(input.size(0)*PROPOSAL_NUM,-1),
-							   target.unsqueeze(1).repeat(1,PROPOSAL_NUM).view(-1))
-		multi_loss=multiloss(lstm_logits,target)
-		total_loss=raw_loss+rank_loss+concat_loss+partcls_loss+multi_loss
+		raw_logits, all_logits, part_logits, _, top_n_prob, lstm_logits, top_n_ccds = model(input)
+		if epoch > 40:
+			plot_draw_box(input, top_n_ccds)
+		part_loss = list_loss(part_logits.view(input.size(0) * PROPOSAL_NUM, -1),
+							  target.unsqueeze(1).repeat(1, PROPOSAL_NUM).view(-1)).view(input.size(0), PROPOSAL_NUM)
+		raw_loss = criterion(raw_logits, target)
+		concat_loss = criterion(all_logits, target)
+		rank_loss = ranking_loss(top_n_prob, part_loss)
+		partcls_loss = criterion(part_logits.view(input.size(0) * PROPOSAL_NUM, -1),
+								 target.unsqueeze(1).repeat(1, PROPOSAL_NUM).view(-1))
+		multi_loss = multiloss(lstm_logits, target)
+		total_loss = raw_loss + rank_loss + concat_loss + partcls_loss + multi_loss
 		total_loss.backward()
 		optimizer.step()
-		prec1, prec2 = accuracy(all_logits, target, path=None, topk=(1, 2))
+		prec1, prec2 = accuracy(raw_logits, target, path=None, topk=(1, 2))
 		losses.update(total_loss.item(), input.size(0))
 		top1.update(prec1[0], input.size(0))
 		top2.update(prec2[0], input.size(0))
@@ -162,7 +166,7 @@ def evaluate(valloader, model, criterion):
 		for i, (input, target) in enumerate(valloader):
 
 			input, target = input.cuda(), target.cuda()
-			_,concat_logits,_,_,_,_ = model(input )
+			_, concat_logits, _, _, _, _, _ = model(input)
 			loss = criterion(concat_logits, target)
 
 			prec1, prec2 = accuracy(concat_logits, target, path=None, topk=(1, 2))
@@ -239,6 +243,23 @@ def adjust_learning_rate(optimizer, lr_factor, epoch):
 	print('the lr is set to {0:.5f}'.format(lr_factor[epoch] * args.lr))
 	for params_group in optimizer.param_groups:
 		params_group['lr'] = lr_factor[epoch] * args.lr
+
+
+def plot_draw_box(input,top_n_cdds):
+	mean = np.expand_dims(np.expand_dims([0.275, 0.278, 0.284], axis=1), axis=1)
+	std = np.expand_dims(np.expand_dims([0.170, 0.171, 0.173], axis=1), axis=1)
+	input = input.cpu().numpy()
+	top_n_cdds=top_n_cdds.cpu().numpy()-255
+	for i in range(input.shape[0]):
+		image = np.moveaxis((input[i] * std + mean), 0, -1) * 255
+		image=image.astype(np.uint8).copy()
+
+		for j in range(top_n_cdds.shape[1]-3):
+			[y0, x0, y1, x1] = top_n_cdds[i][j,1:5].astype(np.int)
+			image=cv2.rectangle(image,(x0,y0),(x1,y1),color=(np.random.randint(128,255),np.random.randint(128,255)
+								,np.random.randint(128,255)),thickness=1)
+		cv2.imshow('image', image)
+		cv2.waitKey(200)
 
 
 if __name__ == '__main__':
