@@ -30,7 +30,7 @@ def arg_pare():
 	arg.add_argument('--img_size', help='the input size', default=224)
 	arg.add_argument('--dir', help='the dataset root', default='/data/wen/Dataset/data_maker/classifier/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='viz_debug')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='viz_debug_loss')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=5, type=str)
@@ -60,7 +60,7 @@ def main():
 		model.load_state_dict(ckpt['state_dict'])
 		start_epoch = ckpt['epoch'] + 1
 
-	LR = Learning_rate_generater('step', [18, 30], 70)
+	LR = Learning_rate_generater('step', [25, 40], 100)
 	params_list = [{'params': model.pretrained_model.parameters(), 'lr': args.lr,
 					'weight_decay': args.weight_decay}, ]
 	params_list.append({'params': model.proposal_net.parameters(), 'lr': args.lr,
@@ -85,7 +85,7 @@ def main():
 	critertion = torch.nn.CrossEntropyLoss().cuda()
 	multiloss = MultiLoss().cuda()
 	if args.evaluate:
-		evaluate(valloader, model, critertion)
+		evaluate(valloader, model, critertion, multiloss)
 		return
 	if not os.path.exists(args.modeldir):
 		os.mkdir(args.modeldir)
@@ -96,7 +96,7 @@ def main():
 		# 	train_sampler.set_epoch(epoch)
 		adjust_learning_rate(opt, LR.lr_factor, epoch)
 		trainObj, top1, top2 = train(trainloader, model, critertion, opt, epoch, multiloss)
-		valObj, prec1, prec2 = evaluate(valloader, model, critertion)
+		valObj, prec1, prec2 = evaluate(valloader, model,  critertion,epoch,multiloss)
 		stats._update(trainObj, top1, top2, valObj, prec1, prec2)
 		filename = []
 		if args.store_per_epoch:
@@ -124,8 +124,7 @@ def train(trainloader, model, criterion, optimizer, epoch, multiloss):
 		optimizer.zero_grad()
 		input, target = input.cuda(), target.cuda()
 		raw_logits, all_logits, part_logits, _, top_n_prob, lstm_logits, top_n_ccds = model(input)
-		if epoch > 40:
-			plot_draw_box(input, top_n_ccds)
+
 		part_loss = list_loss(part_logits.view(input.size(0) * PROPOSAL_NUM, -1),
 							  target.unsqueeze(1).repeat(1, PROPOSAL_NUM).view(-1)).view(input.size(0), PROPOSAL_NUM)
 		raw_loss = criterion(raw_logits, target)
@@ -137,7 +136,7 @@ def train(trainloader, model, criterion, optimizer, epoch, multiloss):
 		total_loss = raw_loss + rank_loss + concat_loss + partcls_loss + multi_loss
 		total_loss.backward()
 		optimizer.step()
-		prec1, prec2 = accuracy(raw_logits, target, path=None, topk=(1, 2))
+		prec1, prec2 = accuracy(lstm_logits, target, path=None, topk=(1, 2))
 		losses.update(total_loss.item(), input.size(0))
 		top1.update(prec1[0], input.size(0))
 		top2.update(prec2[0], input.size(0))
@@ -155,7 +154,7 @@ def train(trainloader, model, criterion, optimizer, epoch, multiloss):
 	return losses.avg, top1.avg, top2.avg
 
 
-def evaluate(valloader, model, criterion):
+def evaluate(valloader, model, criterion,epoch, multiloss):
 	batch_time = AvgMeter()
 	losses = AvgMeter()
 	top1 = AvgMeter()
@@ -166,10 +165,14 @@ def evaluate(valloader, model, criterion):
 		for i, (input, target) in enumerate(valloader):
 
 			input, target = input.cuda(), target.cuda()
-			_, concat_logits, _, _, _, _, _ = model(input)
-			loss = criterion(concat_logits, target)
+			_, _, _, _, _, lstim_logits, top_n_ccds = model(input)
+			if epoch > 40:
+				plot_draw_box(input, top_n_ccds)
 
-			prec1, prec2 = accuracy(concat_logits, target, path=None, topk=(1, 2))
+			loss = multiloss(lstim_logits, target)
+
+			prec1, prec2 = accuracy(lstim_logits, target, path=None, topk=(1, 2))
+
 			losses.update(loss.item(), input.size(0))
 			top1.update(prec1[0], input.size(0))
 			top2.update(prec2[0], input.size(0))

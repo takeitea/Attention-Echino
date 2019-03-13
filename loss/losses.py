@@ -66,7 +66,7 @@ class MultiLoss(nn.CrossEntropyLoss):
 			parts =torch.chunk(output_,5,dim=1)
 			for part in parts:
 				loss+=F.cross_entropy(part.squeeze(1),target)
-		return loss/(target.size(0)*2*5)
+		return loss
 
 
 class HEM_Loss(nn.CrossEntropyLoss):
