@@ -109,6 +109,7 @@ class Auxiliary_Loss(nn.CrossEntropyLoss):
 		instance_losses = torch.autograd.Variable(torch.zeros(batch_size)).cuda()
 
 
+
 def list_loss(logits, targets):
 	temp = F.log_softmax(logits, -1)
 	loss = [-temp[i][targets[i].item()] for i in range(logits.size(0))]

@@ -14,7 +14,7 @@ from loss import list_loss, ranking_loss, MultiLoss
 from data import get_data
 import cv2
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3,4,5,6,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 best_prec1 = 0
 PROPOSAL_NUM = 6
 
@@ -30,10 +30,10 @@ def arg_pare():
 	arg.add_argument('--img_size', help='the input size', default=224)
 	arg.add_argument('--dir', help='the dataset root', default='/data/wen/Dataset/data_maker/classifier/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='viz_debug_loss')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='nts_lstm')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
-	arg.add_argument('--gpu', default=5, type=str)
+	arg.add_argument('--gpu', default=4, type=str)
 	arg.add_argument('--world_size', default=1, type=int, help='number of distributed processes')
 	arg.add_argument('--dist_url', default='tcp://127.0.0.01:123', type=str, help='url used to set up')
 	arg.add_argument('--dist_backend', default='gloo', type=str, help='distributed backend')
@@ -60,7 +60,7 @@ def main():
 		model.load_state_dict(ckpt['state_dict'])
 		start_epoch = ckpt['epoch'] + 1
 
-	LR = Learning_rate_generater('step', [25, 40], 100)
+	LR = Learning_rate_generater('step', [30, 40], 50)
 	params_list = [{'params': model.pretrained_model.parameters(), 'lr': args.lr,
 					'weight_decay': args.weight_decay}, ]
 	params_list.append({'params': model.proposal_net.parameters(), 'lr': args.lr,

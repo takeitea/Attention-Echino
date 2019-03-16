@@ -41,7 +41,7 @@ def default_loader(path):
 def get_data(args):
 	trans_train, val_train = preprocess_strategy()
 	trainset = MyFolder(root=args.dir + 'train', transform=trans_train)
-	valset = MyFolder(root=args.dir + 'val', transform=val_train)
+	valset =ValFolder(root=args.dir + 'val', transform=val_train)
 	trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=32,
 											  pin_memory=True)
 	valloader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size, shuffle=False, num_workers=32,
@@ -104,7 +104,7 @@ class MyFolder(DatasetFolder):
 
 
 class ValFolder(MyFolder):
-	def __init__(self, root, transform=None, target_transform=None, with_path=None, loader=default_loader):
+	def __init__(self, root, transform=None, target_transform=None, with_path=True, loader=default_loader):
 		self.with_path = with_path
 		super(ValFolder, self).__init__(root, transform, target_transform, with_path=True, loader=loader)
 		self.imgs = self.samples
@@ -113,7 +113,10 @@ class ValFolder(MyFolder):
 		path, target = self.samples[idx]
 		sample = self.loader(path)
 		if self.transform is not None:
-			sample = self.transform(sample)
+			# sample = self.transform(sample)
+			data = {"image": np.array(sample)}
+			# sample=self.transform(sample)
+			sample = self.transform(**data)['image']
 		if self.target_transform is not None:
 			target = self.target_transform(target)
 		if self.with_path:

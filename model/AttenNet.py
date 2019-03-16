@@ -58,7 +58,7 @@ class Attention_Net(nn.Module):
 		all_cdds=[ np.concatenate((x.reshape(-1,1),self.edge_anchors.copy(),np.arange(0,len(x)).reshape(-1,1)),axis=1)
 								  for x in rpn_score.data.cpu().numpy()]
 		# TODO the threshold
-		top_n_cdds=[hard_nms(x,topn=self.topN,iou_threshold=0.25) for x in all_cdds]
+		top_n_cdds=[hard_nms(x,topn=self.topN,iou_threshold=0.75) for x in all_cdds]
 		top_n_cdds=np.array(top_n_cdds)
 		top_n_index=top_n_cdds[:,:,-1].astype(np.int)
 		top_n_index=torch.from_numpy(top_n_index).cuda()
