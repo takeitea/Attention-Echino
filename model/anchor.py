@@ -1,6 +1,6 @@
 import numpy as np
 
-INPUT_SIZE = [224,224]
+input_size = [331,331]
 _default_anchors_setting = (
 	dict(layer='p3', stride=32, size=48, scale=[2 ** (1. / 3.), 2 ** (2. / 3.)], aspect_ratio=[0.667, 1, 1.5]), #7 *7
 	dict(layer='p4', stride=32, size=96, scale=[2 ** (1. / 3.), 2 ** (2. / 3.)], aspect_ratio=[0.667, 1, 1.5]), # 7*7
@@ -8,7 +8,7 @@ _default_anchors_setting = (
 )
 
 
-def generator_default_anchor_maps(anchors_setting=None, input_shape=INPUT_SIZE):
+def generator_default_anchor_maps(anchors_setting=None, input_shape=input_size):
 	"""
 	# TODO different anchor setting
 	:param anchors_setting:

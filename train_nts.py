@@ -8,7 +8,7 @@ import random
 import scipy.io as sio
 from model import Attention_Net
 from utils import visualize_atten_softmax, visualize_atten_sigmoid
-from utils import AvgMeter, accuracy, plot_curve,accuracy_lstm
+from utils import AvgMeter, accuracy, plot_curve,accuracy_lstm,restore
 from utils import vizNet, Stats, save_checkpoint, loadpartweight
 from loss import list_loss, ranking_loss, MultiLoss
 from data import get_data
@@ -20,17 +20,17 @@ PROPOSAL_NUM = 6
 
 
 def arg_pare():
-	arg = argparse.ArgumentParser(description=" args of atten-vgg")
+	arg = argparse.ArgumentParser(description=" args of resnet18")
 	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
 	arg.add_argument('--store_per_epoch', default=False)
-	arg.add_argument('--epochs', default=200)
+	arg.add_argument('--epochs', default=55)
 	arg.add_argument('--num_classes', default=9, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
 	arg.add_argument('--img_size', help='the input size', default=331)
-	arg.add_argument('--dir', help='the dataset root', default='/data/wen/Dataset/data_maker/classifier/c9/')
+	arg.add_argument('--dir', help='the dataset root', default='/home/wen/Classicifier/classicifier/tensorflow/c9_350/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='nts_lstm')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='NTS_lstm')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
@@ -38,8 +38,8 @@ def arg_pare():
 	arg.add_argument('--dist_url', default='tcp://127.0.0.01:123', type=str, help='url used to set up')
 	arg.add_argument('--dist_backend', default='gloo', type=str, help='distributed backend')
 	arg.add_argument('--evaluate', default=False, help='whether to evaluate only')
-	arg.add_argument('--resume', default=None)
-
+	arg.add_argument('--resume', default=False, help="whether to load checkpoint")
+	arg.add_argument('--start_epoch', default=0)
 	arg.add_argument('--weight_decay', default=1e-4)
 	return arg.parse_args()
 
@@ -55,12 +55,10 @@ def main():
 	# TODO topN
 	# model=loadpartweight(model)
 	model = Attention_Net(topN=6).cuda()
-	if args.resume:
-		ckpt = torch.load(args.resume)
-		model.load_state_dict(ckpt['state_dict'])
-		start_epoch = ckpt['epoch'] + 1
 
-	LR = Learning_rate_generater('step', [25, 40], 50)
+
+
+	LR = Learning_rate_generater('step', [40, 50], args.epochs)
 	params_list = [{'params': model.pretrained_model.parameters(), 'lr': args.lr,
 					'weight_decay': args.weight_decay}, ]
 	params_list.append({'params': model.proposal_net.parameters(), 'lr': args.lr,
@@ -71,14 +69,11 @@ def main():
 						'weight_decay': args.weight_decay})
 
 	opt = optim.SGD(params_list, lr=args.lr, momentum=0.90, weight_decay=args.weight_decay)
+	if args.resume:
+		restore(args, model, opt, istrain=not args.evaluate)
 	print(args)
 	# plot network
 	# vizNet(model, args.modeldir)
-
-	# if args.distributed:
-	# 	dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url, world_size=args.world_size,rank=0)
-	# 	model.cuda()
-	# 	model = torch.nn.parallel.DistributedDataParallel(model)
 	model = torch.nn.DataParallel(model, range(args.gpu))
 	trainloader, valloader = get_data(args)
 
@@ -89,14 +84,12 @@ def main():
 		return
 	if not os.path.exists(args.modeldir):
 		os.mkdir(args.modeldir)
-	stats = Stats(args.modeldir, start_epoch=0)
+	stats = Stats(args.modeldir, start_epoch=0,total_epoch=args.epochs)
 	for epoch in range(args.epochs):
-
-		# if args.distributed:
-		# 	train_sampler.set_epoch(epoch)
+		is_last=epoch==args.epochs
 		adjust_learning_rate(opt, LR.lr_factor, epoch)
 		trainObj, top1, top2 = train(trainloader, model, critertion, opt, epoch, multiloss)
-		valObj, prec1, prec2 = evaluate(valloader, model,  critertion,epoch,multiloss)
+		valObj, prec1, prec2 = evaluate(valloader, model,  critertion,epoch,multiloss,is_last,args)
 		stats._update(trainObj, top1, top2, valObj, prec1, prec2)
 		filename = []
 		if args.store_per_epoch:
@@ -109,6 +102,8 @@ def main():
 
 		plot_curve(stats, args.modeldir, True)
 		sio.savemat(os.path.join(args.modeldir, 'stats.mat'), {'data': stats})
+
+	stats.get_last5()
 
 
 def train(trainloader, model, criterion, optimizer, epoch, multiloss):
@@ -136,7 +131,7 @@ def train(trainloader, model, criterion, optimizer, epoch, multiloss):
 		total_loss = raw_loss + rank_loss + concat_loss + partcls_loss + multi_loss
 		total_loss.backward()
 		optimizer.step()
-		prec1, prec2 = accuracy_lstm(lstm_logits, target, path=None, topk=(1, 2))
+		prec1, prec2 = accuracy_lstm(lstm_logits, target,args.modeldir, path=None, topk=(1, 2))
 		losses.update(total_loss.item(), input.size(0))
 		top1.update(prec1[0], input.size(0))
 		top2.update(prec2[0], input.size(0))
@@ -154,7 +149,7 @@ def train(trainloader, model, criterion, optimizer, epoch, multiloss):
 	return losses.avg, top1.avg, top2.avg
 
 
-def evaluate(valloader, model, criterion,epoch, multiloss):
+def evaluate(valloader, model, criterion,epoch, multiloss,is_last,args):
 	batch_time = AvgMeter()
 	losses = AvgMeter()
 	top1 = AvgMeter()
@@ -162,7 +157,7 @@ def evaluate(valloader, model, criterion,epoch, multiloss):
 	model.eval()
 	with torch.no_grad():
 		end = time.time()
-		for i, (input, target) in enumerate(valloader):
+		for i, (input, target,path) in enumerate(valloader):
 
 			input, target = input.cuda(), target.cuda()
 			_, _, _, _, _, lstim_logits, top_n_ccds = model(input)
@@ -170,8 +165,8 @@ def evaluate(valloader, model, criterion,epoch, multiloss):
 				plot_draw_box(input, top_n_ccds)
 
 			loss = multiloss(lstim_logits, target)
-
-			prec1, prec2 = accuracy_lstm(lstim_logits, target, path=None, topk=(1, 2))
+			path = path if is_last else None
+			prec1, prec2 = accuracy_lstm(lstim_logits, target,  args.modeldir,path=path,topk=(1, 2))
 
 			losses.update(loss.item(), input.size(0))
 			top1.update(prec1[0], input.size(0))

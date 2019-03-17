@@ -8,7 +8,7 @@ normalize = transforms.Normalize(mean=[0.275, 0.278, 0.284],
 
 # def albu_
 
-def preprocess_strategy(dataset='c9'):
+def preprocess_strategy(dataset='ImageNet'):
 	if dataset.startswith('CUB'):
 		train_transforms = transforms.Compose([
 			transforms.Resize(448),
@@ -53,15 +53,15 @@ def preprocess_strategy(dataset='c9'):
 		])
 	elif dataset.startswith('ImageNet'):
 		train_transforms = transforms.Compose([
-			transforms.Resize(350),
-			transforms.RandomResizedCrop(331),
+			transforms.Resize(250),
+			transforms.RandomResizedCrop(224),
 			transforms.RandomHorizontalFlip(),
 			transforms.ToTensor(),
 			normalize,
 		])
 		val_transforms = transforms.Compose([
-			transforms.Resize(350),
-			transforms.CenterCrop(331),
+			transforms.Resize(250),
+			transforms.CenterCrop(224),
 			transforms.ToTensor(),
 			normalize,
 		])
@@ -80,7 +80,7 @@ def preprocess_strategy(dataset='c9'):
 					albumentations.NoOp()]),
 				albumentations.OneOf([
 					albumentations.RandomScale(),
-					albumentations.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.50, rotate_limit=45, p=0.75)]),
+					albumentations.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.50, rotate_limit=10, p=0.75)]),
 				albumentations.SmallestMaxSize(max_size=350),
 				albumentations.Normalize(mean=[0.275, 0.278, 0.284], std=[0.170, 0.171, 0.173]),
 				albumentations.RandomCrop(331, 331),

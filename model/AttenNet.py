@@ -2,10 +2,8 @@ from torch import nn
 from .resnet import resnet18
 import torch
 import torch.nn.functional as F
-from torch.autograd import Variable
 import numpy as np
 from .anchor import generator_default_anchor_maps,hard_nms
-from torchvision import transforms
 CAT_NUM=4
 PROPOSAL_NUM=6
 

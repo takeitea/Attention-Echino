@@ -93,9 +93,9 @@ class MyFolder(DatasetFolder):
 		path, target = self.samples[index]
 		sample = self.loader(path)
 		if self.transform is not None:
-			data = {"image": np.array(sample)}
-			# sample=self.transform(sample)
-			sample = self.transform(**data)['image']
+			# data = {"image": np.array(sample)}
+			sample=self.transform(sample)
+			# sample = self.transform(**data)['image']
 		if self.target_transform is not None:
 			target = self.target_transform(target)
 		if self.with_path:
@@ -114,9 +114,9 @@ class ValFolder(MyFolder):
 		sample = self.loader(path)
 		if self.transform is not None:
 			# sample = self.transform(sample)
-			data = {"image": np.array(sample)}
-			# sample=self.transform(sample)
-			sample = self.transform(**data)['image']
+			# data = {"image": np.array(sample)}
+			sample=self.transform(sample)
+			# sample = self.transform(**data)['image']
 		if self.target_transform is not None:
 			target = self.target_transform(target)
 		if self.with_path:

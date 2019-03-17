@@ -32,15 +32,21 @@ class MY_EVALUATE:
 	to evaluate the classifier performance
 	"""
 
-	def __init__(self, y_true, y_pred, data_set=None):
-		self.y_true = y_true
-		self.y_pred = y_pred
+	def __init__(self, Root_dir, data_set=None):
+		self.Root_dir=Root_dir
+		pred_txt = os.path.join(Root_dir, "result.txt")
+		test_txt = os.path.join(Root_dir, "test_list.txt")
+		pred = [line.strip().split(" ")[1] for line in open(pred_txt, 'r').readlines()]
+		true = [line.strip().split(",")[-1] for line in open(test_txt, 'r').readlines()]
+		self.y_true = true
+		self.y_pred = pred
+		self.data_set=data_set if data_set else 'c9'
 		if data_set is not None:
 			self.labels = self._get_idx2cate_dict(data_set)
 		else:
 			self.labels = list(set(data_set))
 
-	def my_confusion_matrix(self,classes,saved_dir ,normalize=False,cmap=plt.cm.Blues):
+	def my_confusion_matrix(self,normalize=False,cmap=plt.cm.Blues):
 
 		# labels=list(set(y_true))
 		conf_mat = confusion_matrix(self.y_true, self.y_pred)
@@ -57,7 +63,7 @@ class MY_EVALUATE:
 		ax.figure.colorbar(im,ax=ax)
 		ax.set(xticks=np.arange(conf_mat.shape[1]),
 			   yticks=np.arange(conf_mat.shape[0]),
-			   xticklabels=classes,yticklabels=classes,
+			   xticklabels=self.labels,yticklabels=self.labels,
 			   ylabel='True label',
 			   xlabel='Predicted label')
 
@@ -70,17 +76,17 @@ class MY_EVALUATE:
 						ha="center", va="center",
 						color="white" if conf_mat[i, j] > thresh else "black")
 		fig.tight_layout()
-		if saved_dir:
-			plt.savefig(saved_dir+'/cm.png')
+		if self.Root_dir:
+			plt.savefig(self.Root_dir+'/cm.png')
 		plt.show()
-
 		return ax
+
 	def my_acc(self):
 		print(accuracy_score(self.y_true,self.y_pred))
 
 	def my_classification_report(self):
 
-		print(classification_report(self.y_true, self.y_pred,target_names=idx2catename['c9'],digits=3))
+		print(classification_report(self.y_true, self.y_pred,target_names=idx2catename[self.data_set],digits=3))
 
 	def _get_idx2cate_dict(self, datasetname=None):
 		if datasetname not in idx2catename.keys():
@@ -93,16 +99,11 @@ class MY_EVALUATE:
 
 def main():
 	Root_dir = './ResNet18base_line'
-	pred_txt = os.path.join(Root_dir, "result.txt")
-	test_txt = os.path.join(Root_dir, "test_list.txt")
+
 	dataset = "c6"
-
-	pred = [line.strip().split(" ")[1] for line in open(pred_txt, 'r').readlines()]
-	true = [line.strip().split(",")[-1] for line in open(test_txt, 'r').readlines()]
-
-	my_eval = MY_EVALUATE(y_true=true, y_pred=pred, data_set=dataset)
+	my_eval = MY_EVALUATE(Root_dir, data_set=dataset)
 	my_eval.my_classification_report()
-	my_eval.my_confusion_matrix(idx2catename['c9'],Root_dir,normalize=True)
+	my_eval.my_confusion_matrix(normalize=True)
 	my_eval.my_acc()
 
 if __name__ == "__main__":

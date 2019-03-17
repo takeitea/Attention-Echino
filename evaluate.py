@@ -45,7 +45,6 @@ def main():
 	model.load_state_dict(torch.load(os.path.join(args.modeldir,'model_best.pth.tar'))['state_dict'])
 	trainloader, valloader = get_data(args)
 
-	# critertion = torch.nn.CrossEntropyLoss(weight=torch.Tensor([5,5,5,1,5,1,1,1,1,])).cuda()
 	if args.evaluate:
 		evaluate(valloader, model)
 		return
@@ -61,7 +60,6 @@ def evaluate(valloader, model):
 			input, target = input.cuda(), target.cuda()
 			model=model.cuda()
 			output= model(input,target)
-
 			prec1, prec2 = accuracy(output, target, path=None, topk=(1, 2))
 			top1.update(prec1[0], input.size(0))
 			top2.update(prec2[0], input.size(0))
