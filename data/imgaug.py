@@ -53,15 +53,15 @@ def preprocess_strategy(dataset='c9'):
 		])
 	elif dataset.startswith('ImageNet'):
 		train_transforms = transforms.Compose([
-			transforms.Resize(250),
-			transforms.RandomResizedCrop(224),
+			transforms.Resize(350),
+			transforms.RandomResizedCrop(331),
 			transforms.RandomHorizontalFlip(),
 			transforms.ToTensor(),
 			normalize,
 		])
 		val_transforms = transforms.Compose([
-			transforms.Resize(250),
-			transforms.CenterCrop(224),
+			transforms.Resize(350),
+			transforms.CenterCrop(331),
 			transforms.ToTensor(),
 			normalize,
 		])
@@ -81,13 +81,13 @@ def preprocess_strategy(dataset='c9'):
 				albumentations.OneOf([
 					albumentations.RandomScale(),
 					albumentations.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.50, rotate_limit=45, p=0.75)]),
-				albumentations.SmallestMaxSize(max_size=256),
+				albumentations.SmallestMaxSize(max_size=350),
 				albumentations.Normalize(mean=[0.275, 0.278, 0.284], std=[0.170, 0.171, 0.173]),
-				albumentations.RandomCrop(224, 224),
+				albumentations.RandomCrop(331, 331),
 				ToTensor()])
 		val_transforms=albumentations.Compose([
-			albumentations.Resize(256,256),
-			albumentations.CenterCrop(224,224),
+			albumentations.Resize(350,350),
+			albumentations.CenterCrop(331,331),
 			albumentations.Normalize(mean=[0.275, 0.278, 0.284], std=[0.170, 0.171, 0.173]),
 			ToTensor()
 		])

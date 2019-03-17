@@ -8,7 +8,7 @@ import random
 import scipy.io as sio
 from model import Attention_Net
 from utils import visualize_atten_softmax, visualize_atten_sigmoid
-from utils import AvgMeter, accuracy, plot_curve
+from utils import AvgMeter, accuracy, plot_curve,accuracy_lstm
 from utils import vizNet, Stats, save_checkpoint, loadpartweight
 from loss import list_loss, ranking_loss, MultiLoss
 from data import get_data
@@ -27,7 +27,7 @@ def arg_pare():
 	arg.add_argument('--num_classes', default=9, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
-	arg.add_argument('--img_size', help='the input size', default=224)
+	arg.add_argument('--img_size', help='the input size', default=331)
 	arg.add_argument('--dir', help='the dataset root', default='/data/wen/Dataset/data_maker/classifier/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
 	arg.add_argument('--modeldir', help=' the model viz dir ', default='nts_lstm')
@@ -60,7 +60,7 @@ def main():
 		model.load_state_dict(ckpt['state_dict'])
 		start_epoch = ckpt['epoch'] + 1
 
-	LR = Learning_rate_generater('step', [30, 40], 50)
+	LR = Learning_rate_generater('step', [25, 40], 50)
 	params_list = [{'params': model.pretrained_model.parameters(), 'lr': args.lr,
 					'weight_decay': args.weight_decay}, ]
 	params_list.append({'params': model.proposal_net.parameters(), 'lr': args.lr,
@@ -136,7 +136,7 @@ def train(trainloader, model, criterion, optimizer, epoch, multiloss):
 		total_loss = raw_loss + rank_loss + concat_loss + partcls_loss + multi_loss
 		total_loss.backward()
 		optimizer.step()
-		prec1, prec2 = accuracy(lstm_logits, target, path=None, topk=(1, 2))
+		prec1, prec2 = accuracy_lstm(lstm_logits, target, path=None, topk=(1, 2))
 		losses.update(total_loss.item(), input.size(0))
 		top1.update(prec1[0], input.size(0))
 		top2.update(prec2[0], input.size(0))
@@ -171,7 +171,7 @@ def evaluate(valloader, model, criterion,epoch, multiloss):
 
 			loss = multiloss(lstim_logits, target)
 
-			prec1, prec2 = accuracy(lstim_logits, target, path=None, topk=(1, 2))
+			prec1, prec2 = accuracy_lstm(lstim_logits, target, path=None, topk=(1, 2))
 
 			losses.update(loss.item(), input.size(0))
 			top1.update(prec1[0], input.size(0))

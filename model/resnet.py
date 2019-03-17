@@ -203,7 +203,14 @@ def resnet50(pretrained=False, **kwargs):
     """
 	model = ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
 	if pretrained:
-		model.load_state_dict(model_zoo.load_url(model_urls['resnet50']))
+		if pretrained:
+			old_dict = model.state_dict()
+			new_dict = model_zoo.load_url(model_urls['resnet50'])
+			for k, v in new_dict.items():
+				if k in old_dict.keys() and old_dict[k].size() == new_dict[k].size():
+					old_dict[k] = v
+			old_dict.update()
+			model.load_state_dict(old_dict, strict=False)
 	return model
 
 

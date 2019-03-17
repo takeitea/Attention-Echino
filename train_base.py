@@ -5,7 +5,7 @@ import numpy as np
 import torch.optim as optim
 import os
 import scipy.io as sio
-from model import resnet18
+from model import resnet18,resnet50
 from utils import visualize_atten_softmax, visualize_atten_sigmoid
 from utils import AvgMeter, accuracy, plot_curve,restore
 from utils import vizNet, Stats, save_checkpoint,loadpartweight
@@ -24,19 +24,19 @@ def arg_pare():
 	arg.add_argument('--num_classes', default=9, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
-	arg.add_argument('--img_size', help='the input size', default=224)
-	arg.add_argument('--dir', help='the dataset root', default='/data/wen/Dataset/data_maker/classifier/c9_new/')
+	arg.add_argument('--img_size', help='the input size', default=331)
+	arg.add_argument('--dir', help='the dataset root', default='/home/wen/Classicifier/classicifier/tensorflow/c9_350/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='ResNet18base_line')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='ResNet50aug')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
 	arg.add_argument('--world_size', default=1, type=int, help='number of distributed processes')
 	arg.add_argument('--dist_url', default='tcp://127.0.0.01:123', type=str, help='url used to set up')
 	arg.add_argument('--dist_backend', default='gloo', type=str, help='distributed backend')
-	arg.add_argument('--evaluate', default=True, help='whether to evaluate only')
+	arg.add_argument('--evaluate', default=False, help='whether to evaluate only')
 	arg.add_argument('--mean5',default=35,help="the first epoch to calculate the 5-epoch means")
-	arg.add_argument('--resume',default='./ResNet18base_line/model_best.pth.tar',help="whether to load checkpoint")
+	arg.add_argument('--resume',default=False,help="whether to load checkpoint")
 	return arg.parse_args()
 
 
@@ -46,9 +46,9 @@ args = arg_pare()
 def main():
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
-	model=resnet18(pretrained=True,num_classes=9).cuda()
+	model=resnet50(pretrained=True,num_classes=9).cuda()
 
-	LR = Learning_rate_generater('step', [30,40], 45)
+	LR = Learning_rate_generater('step', [8,30], args.epochs)
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-4)
 	print(args)
 	# plot network
@@ -67,15 +67,23 @@ def main():
 	if not os.path.exists(args.modeldir):
 		os.mkdir(args.modeldir)
 	stats = Stats(args.modeldir, start_epoch=0)
+	mean5prec1=AvgMeter()
+	mean5prec2=AvgMeter()
+
+
 	for epoch in range(args.epochs):
 
 		# if args.distributed:
 		# 	train_sampler.set_epoch(epoch)
+
 		adjust_learning_rate(opt, LR.lr_factor, epoch)
 		trainObj, top1, top2 = train(trainloader, model, critertion, opt, epoch)
 		valObj, prec1, prec2 = evaluate(valloader, model, critertion)
 
 		stats._update(trainObj, top1, top2, valObj, prec1, prec2)
+		if args.epochs-epoch<=5:
+			mean5prec1.update(prec1)
+			mean5prec2.update(prec1)
 		filename = []
 		if args.store_per_epoch:
 			filename.append(os.path.join(args.modeldir, 'net-epoch-%s.pth.tar' % (epoch + 1)))
@@ -87,6 +95,9 @@ def main():
 
 		plot_curve(stats, args.modeldir, True)
 		sio.savemat(os.path.join(args.modeldir, 'stats.mat'), {'data': stats})
+
+	print("lase 5 epochs mean top1: {}".format(mean5prec1.val))
+	print("lase 5 epochs mean top2: {}".format(mean5prec2.val))
 
 
 def train(trainloader, model, criterion, optimizer, epoch):
