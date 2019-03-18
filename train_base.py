@@ -71,7 +71,7 @@ def main():
 	stats = Stats(args.modeldir, start_epoch=args.start_epoch, total_epoch=args.epochs)
 	for epoch in range(args.epochs):
 
-		is_last=epoch==args.epochs
+		is_last=epoch==args.epochs-1
 
 		adjust_learning_rate(opt, LR.lr_factor, epoch)
 		trainObj, top1, top2 = train(trainloader, model, critertion, opt, epoch)

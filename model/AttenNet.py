@@ -44,8 +44,6 @@ class Attention_Net(nn.Module):
 		self.pad_size=224
 		self.edge_anchors=(edge_anchors+224).astype(np.int)
 		self.bilstm=nn.LSTM(512,9,batch_first=True,num_layers=1,bidirectional=True,bias=False)
-		# self.inv_normalize=transforms.Normalize(mean=[-0.275/0.170,-0.278/0.171,-0.284/0.173],
-		# 										std=[1/0.170,1/0.171,1/0.173])
 
 	def forward(self, x):
 		resnet_out,rpn_feature,feature=self.pretrained_model(x)
