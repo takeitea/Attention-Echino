@@ -30,7 +30,7 @@ class ProposalNet(nn.Module):
 		return torch.cat((t1,t2,t3),dim=1)
 
 class Attention_Net(nn.Module):
-	def __init__(self,topN=4,num_classes=9):
+	def __init__(self,topN=4,num_classes=200):
 		super(Attention_Net,self).__init__()
 		self.pretrained_model=resnet18(pretrained=True)
 		self.pretrained_model.avgpool=nn.AdaptiveAvgPool2d(1)
@@ -43,7 +43,7 @@ class Attention_Net(nn.Module):
 		# TODO  next line
 		self.pad_size=224
 		self.edge_anchors=(edge_anchors+224).astype(np.int)
-		self.bilstm=nn.LSTM(512,9,batch_first=True,num_layers=1,bidirectional=True,bias=False)
+		self.bilstm=nn.LSTM(512,200,batch_first=True,num_layers=1,bidirectional=True,bias=False)
 
 	def forward(self, x):
 		resnet_out,rpn_feature,feature=self.pretrained_model(x)
