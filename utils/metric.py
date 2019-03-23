@@ -36,6 +36,8 @@ def accuracy(output, target, dir, path, topk=(1,)):
 	with torch.no_grad():
 		maxk = max(topk)
 		batch_size = target.size(0)
+		# if maxk>=output.size(1):
+			# maxk=1
 		_, pred = output.topk(maxk, 1)
 		pred = pred.t()
 		if path:
@@ -87,8 +89,8 @@ def accuracy_lstm(output, target, dir, path, topk=(1,)):
 	:return:
 	"""
 	with torch.no_grad():
-		output = output.view(output.size(0), output.size(1) * 2, -1)
-		output = torch.mean(output, dim=1)
+		# output = output.view(output.size(0), output.size(1) * 2, -1)
+		# output = torch.mean(output, dim=1)
 		maxk = max(topk)
 		batch_size = target.size(0)
 		_, pred = output.topk(maxk, 1)

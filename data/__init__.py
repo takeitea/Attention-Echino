@@ -1,1 +1,1 @@
-from .dataloader import get_data
+from .dataloader import get_data,get_data_mask

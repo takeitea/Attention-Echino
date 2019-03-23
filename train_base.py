@@ -28,7 +28,7 @@ def arg_pare():
 	arg.add_argument('--img_size', help='the input size', default=224)
 	arg.add_argument('--dir', help='the dataset root', default='./datafolder/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='ResNet18_aug')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='ResNet18_base')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
@@ -48,7 +48,7 @@ args = arg_pare()
 def main():
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
-	model = resnet18(pretrained=True, num_classes=9).cuda()
+	model = resnet50(pretrained=True, num_classes=9).cuda()
 
 	LR = Learning_rate_generater('step', [20, 30], args.epochs)
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-4)

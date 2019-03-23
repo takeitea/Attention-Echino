@@ -14,7 +14,7 @@ from loss import list_loss, ranking_loss, MultiLoss
 from data import get_data
 import cv2
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 best_prec1 = 0
 PROPOSAL_NUM = 6
 
@@ -23,14 +23,14 @@ def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of resnet18")
 	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
 	arg.add_argument('--store_per_epoch', default=False)
-	arg.add_argument('--epochs', default=55)
-	arg.add_argument('--num_classes', default=200, type=int)
+	arg.add_argument('--epochs', default=50)
+	arg.add_argument('--num_classes', default=9, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
 	arg.add_argument('--img_size', help='the input size', default=224)
-	arg.add_argument('--dir', help='the dataset root', default='./datafolder/CUB/')
+	arg.add_argument('--dir', help='the dataset root', default='./datafolder/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='NTS_CUB')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='NTS_CUB_c9_big')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
@@ -58,7 +58,7 @@ def main():
 
 
 
-	LR = Learning_rate_generater('step', [40, 50], args.epochs)
+	LR = Learning_rate_generater('step', [30, 40], args.epochs)
 	params_list = [{'params': model.pretrained_model.parameters(), 'lr': args.lr,
 					'weight_decay': args.weight_decay}, ]
 	params_list.append({'params': model.proposal_net.parameters(), 'lr': args.lr,
@@ -118,7 +118,7 @@ def train(trainloader, model, criterion, optimizer, epoch, multiloss):
 		data_time.update(time.time() - end)
 		optimizer.zero_grad()
 		input, target = input.cuda(), target.cuda()
-		raw_logits, all_logits, part_logits, _, top_n_prob, lstm_logits, top_n_ccds = model(input)
+		raw_logits, all_logits, part_logits, _, top_n_prob, top_n_ccds = model(input)
 
 		part_loss = list_loss(part_logits.view(input.size(0) * PROPOSAL_NUM, -1),
 							  target.unsqueeze(1).repeat(1, PROPOSAL_NUM).view(-1)).view(input.size(0), PROPOSAL_NUM)
@@ -127,11 +127,11 @@ def train(trainloader, model, criterion, optimizer, epoch, multiloss):
 		rank_loss = ranking_loss(top_n_prob, part_loss)
 		partcls_loss = criterion(part_logits.view(input.size(0) * PROPOSAL_NUM, -1),
 								 target.unsqueeze(1).repeat(1, PROPOSAL_NUM).view(-1))
-		multi_loss = multiloss(lstm_logits, target)
-		total_loss = raw_loss + rank_loss + concat_loss + partcls_loss + multi_loss
+		# multi_loss = multiloss(lstm_logits, target)
+		total_loss = raw_loss + rank_loss + concat_loss + partcls_loss
 		total_loss.backward()
 		optimizer.step()
-		prec1, prec2 = accuracy_lstm(lstm_logits, target,args.modeldir, path=None, topk=(1, 2))
+		prec1, prec2 = accuracy_lstm(all_logits, target,args.modeldir, path=None, topk=(1, 2))
 		losses.update(total_loss.item(), input.size(0))
 		top1.update(prec1[0], input.size(0))
 		top2.update(prec2[0], input.size(0))
@@ -160,13 +160,14 @@ def evaluate(valloader, model, criterion,epoch, multiloss,is_last,args):
 		for i, (input, target,path) in enumerate(valloader):
 
 			input, target = input.cuda(), target.cuda()
-			_, _, _, _, _, lstim_logits, top_n_ccds = model(input)
+			_, all_logits, _, _, _,  top_n_ccds = model(input)
 			if epoch > 40:
 				plot_draw_box(input, top_n_ccds)
+			loss=criterion(all_logits,target)
 
-			loss = multiloss(lstim_logits, target)
+			# loss = multiloss(all_logits, target)
 			path = path if is_last else None
-			prec1, prec2 = accuracy_lstm(lstim_logits, target,  args.modeldir,path=path,topk=(1, 2))
+			prec1, prec2 = accuracy_lstm(all_logits, target,  args.modeldir,path=path,topk=(1, 2))
 
 			losses.update(loss.item(), input.size(0))
 			top1.update(prec1[0], input.size(0))

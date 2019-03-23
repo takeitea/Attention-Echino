@@ -1,11 +1,7 @@
 import numpy as np
 import cv2
-import matplotlib
-import glob
-import h5py
 import os
 from PIL import Image
-from sklearn.datasets import load_digits
 from numpy.random import shuffle
 IMG_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif']
 
@@ -84,7 +80,7 @@ def make_dataset(dir, class_to_idx, extensions):
 
 class C9:
 
-    def __init__(self, root='/data/wen/Dataset/data_maker/classifier/roi_padding/test_roi', dims=[215, 215, 1],
+    def __init__(self, root='../datafolder/C2_MASK_ROI/ROI/image/val', dims=[215, 215, 1],
                  saved_path='./h5', extensions=IMG_EXTENSIONS, transform=None,
                  loader=cv_loader,gray=True,
                  target_transform=None):
@@ -158,10 +154,10 @@ class C9:
 
 def main():
     c9 = C9(loader=cv_loader)
-    data = c9.load_c9(count=10,is_shuffle=False)
+    data = c9.load_c9(is_shuffle=False)
 
     print(data["data"].shape)
-    c9.write_txt('test')
+    c9.write_txt('val')
 
 if __name__ == '__main__':
     main()

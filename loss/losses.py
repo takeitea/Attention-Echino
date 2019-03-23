@@ -129,3 +129,6 @@ def ranking_loss(score, targets, proposal_num=PROPOSAL_NUM):
 		loss_p = torch.sum(F.relu(loss_p))
 		loss += loss_p
 	return loss / batch_size
+
+
+
