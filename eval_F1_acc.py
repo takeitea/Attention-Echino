@@ -99,10 +99,10 @@ class MY_EVALUATE:
 
 
 def main():
-	Root_dir = './ResNet18_resize'
+	Root_dir = './result/DRN_aloss'
 	my_eval = MY_EVALUATE(Root_dir)
 	my_eval.my_classification_report()
-	my_eval.my_confusion_matrix(normalize=True)
+	my_eval.my_confusion_matrix(normalize=False)
 	my_eval.my_acc()
 
 

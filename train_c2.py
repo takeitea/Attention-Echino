@@ -26,7 +26,7 @@ def arg_pare():
 	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
 	arg.add_argument('--img_size', help='the input size', default=448)
-	arg.add_argument('--dir', help='the dataset root', default='./datafolder/C2_MASK_ROI/ROI/image/')
+	arg.add_argument('--dir', help='the dataset root', default='/data/wen/data/hymenoptera_data/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
 	arg.add_argument('--modeldir', help=' the model viz dir ', default='ResNet18_448')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')

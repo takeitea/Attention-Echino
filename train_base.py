@@ -1,18 +1,19 @@
 import argparse
+import torch.nn as nn
 import torch
 import time
 import numpy as np
 import torch.optim as optim
 import os
 import scipy.io as sio
-from model import resnet18, resnet50
+from model import resnet18_rf
 from utils import visualize_atten_softmax, visualize_atten_sigmoid
 from utils import AvgMeter, accuracy, plot_curve, restore
 from utils import vizNet, Stats, save_checkpoint, loadpartweight
 from data import get_data
-from loss import HEM_Loss
+from loss import HEM_Loss,Auxiliary_Loss
 import shutil
-
+from model import drn_c_26
 os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 best_prec1 = 0
 
@@ -21,14 +22,14 @@ def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of resnet18")
 	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
 	arg.add_argument('--store_per_epoch', default=False)
-	arg.add_argument('--epochs', default=40)
+	arg.add_argument('--epochs', default=30)
 	arg.add_argument('--num_classes', default=9, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
 	arg.add_argument('--img_size', help='the input size', default=224)
 	arg.add_argument('--dir', help='the dataset root', default='./datafolder/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='ResNet18_base')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='drn_aloss')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
@@ -48,9 +49,10 @@ args = arg_pare()
 def main():
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
-	model = resnet50(pretrained=True, num_classes=9).cuda()
-
-	LR = Learning_rate_generater('step', [20, 30], args.epochs)
+	model = drn_c_26(pretrained=True, num_classes=1000).cuda()
+	model.fc=nn.Linear(512,9)
+	model.cuda()
+	LR = Learning_rate_generater('step', [20, 25], args.epochs)
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-4)
 	print(args)
 	# plot network
@@ -100,11 +102,12 @@ def train(trainloader, model, criterion, optimizer, epoch):
 	top2 = AvgMeter()
 	model.train()
 	end = time.time()
+	aloss=Auxiliary_Loss()
 	for i, (input, target) in enumerate(trainloader):
 		data_time.update(time.time() - end)
 		input, target = input.cuda(), target.cuda()
-		out1, _, _ = model(input)
-		loss = criterion(out1, target)
+		out1= model(input)
+		loss = criterion(out1, target)+5*aloss(out1,target)
 		prec1, prec2 = accuracy(out1, target, dir=None,path=None, topk=(1, 2))
 		losses.update(loss.item(), input.size(0))
 		top1.update(prec1[0], input.size(0))
@@ -138,7 +141,7 @@ def evaluate(valloader, model, criterion,is_last,args):
 		for i, (input, target, path) in enumerate(valloader):
 
 			input, target = input.cuda(), target.cuda()
-			output1, _, _ = model(input)
+			output1= model(input)
 			loss = criterion(output1, target)
 			path=path if is_last else None
 			prec1, prec2 = accuracy(output1, target,args.modeldir ,path=path, topk=(1, 2))

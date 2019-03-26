@@ -55,17 +55,19 @@ class Affinity_Loss(nn.Module):
 		L_mm = torch.sum(losses * (1 - onehot), -1)
 		return L_mm + rw
 
-class MultiLoss(nn.CrossEntropyLoss):
-	def __init__(self,):
-		super(MultiLoss,self).__init__(None,reduction='elementwise_mean')
-	def forward(self,output, target):
-		loss=torch.autograd.Variable(torch.zeros(1),).cuda()
 
-		output_2=torch.chunk(output,2,dim=-1)
+class MultiLoss(nn.CrossEntropyLoss):
+	def __init__(self, ):
+		super(MultiLoss, self).__init__(None, reduction='elementwise_mean')
+
+	def forward(self, output, target):
+		loss = torch.autograd.Variable(torch.zeros(1), ).cuda()
+
+		output_2 = torch.chunk(output, 2, dim=-1)
 		for output_ in output_2:
-			parts =torch.chunk(output_,5,dim=1)
+			parts = torch.chunk(output_, 5, dim=1)
 			for part in parts:
-				loss+=F.cross_entropy(part.squeeze(1),target)
+				loss += F.cross_entropy(part.squeeze(1), target)
 		return loss
 
 
@@ -104,11 +106,16 @@ class Auxiliary_Loss(nn.CrossEntropyLoss):
 		super(Auxiliary_Loss, self).__init__()
 
 	def forward(self, output, target):
-		batch_size = output.size(0)
-		output_ = output.clone()
-		instance_losses = torch.autograd.Variable(torch.zeros(batch_size)).cuda()
-
-
+		_,pred=output.topk(2,1)
+		pred=pred.t()
+		idxs=[]
+		for inx,label in enumerate(target.data):
+			if label in pred[:,inx]:
+				idxs.append(inx)
+		idxs=torch.Tensor(idxs).cuda().long()
+		output_hard=output.index_select(0,idxs)
+		target_hard=target.index_select(0,idxs)
+		return F.cross_entropy(output_hard,target_hard)
 
 def list_loss(logits, targets):
 	temp = F.log_softmax(logits, -1)
@@ -131,4 +138,12 @@ def ranking_loss(score, targets, proposal_num=PROPOSAL_NUM):
 	return loss / batch_size
 
 
+kl = nn.KLDivLoss()
 
+
+def KL_Loss(raw_logits, part_logits, target, tmp):
+	batch_size = target.size(0)
+	kl_loss = torch.zeros(1).cuda()
+	for i in range(part_logits.size(1)):
+		kl_loss += kl(F.softmax(raw_logits / tmp, dim=1), F.softmax(part_logits[:, i, :] / tmp, dim=1)) * tmp ** 2
+	return kl_loss / batch_size / part_logits.size(1)

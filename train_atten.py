@@ -8,32 +8,32 @@ from data import get_data
 import random
 import scipy.io as sio
 from model import AttenVgg
-from model import resnet18,resnet50
+from model import resnet18_atten
 from utils import visualize_atten_softmax, visualize_atten_sigmoid
 from utils import AvgMeter, accuracy, plot_curve
 from utils import vizNet, Stats, save_checkpoint,loadpartweight
 from loss import HEM_Loss
 import torch.distributed as dist
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4"
 best_prec1 = 0
 
 
 def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of atten-vgg")
-	arg.add_argument('-bs', '--batch_size', help='batch size', default=80)
+	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
 	arg.add_argument('--store_per_epoch', default=False)
 	arg.add_argument('--epochs', default=55 )
 	arg.add_argument('--num_classes', default=200, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
-	arg.add_argument('--img_size', help='the input size', default=448)
-	arg.add_argument('--dir', help='the dataset root', default='./datafolder/CUB/')
+	arg.add_argument('--img_size', help='the input size', default=224)
+	arg.add_argument('--dir', help='the dataset root', default='./datafolder/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
 	arg.add_argument('--modeldir', help=' the model viz dir ', default='atten_res50')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
-	arg.add_argument('--gpu', default=4, type=str)
+	arg.add_argument('--gpu', default=5, type=str)
 	arg.add_argument('--world_size', default=1, type=int, help='number of distributed processes')
 	arg.add_argument('--dist_url', default='tcp://127.0.0.01:123', type=str, help='url used to set up')
 	arg.add_argument('--dist_backend', default='gloo', type=str, help='distributed backend')
@@ -51,23 +51,13 @@ def main():
 	# args.distributed = args.world_size > 1
 	# model = AttenVgg(input_size=args.img_size, num_class=args.num_classes,attention=True)
 	# model=loadpartweight(model)
-	model=resnet50(pretrained=True,num_classes=200).cuda()
-	LR = Learning_rate_generater('step', [30,45], args.epochs)
+	model=resnet18_atten(pretrained=True,num_classes=9).cuda()
+	LR = Learning_rate_generater('step', [40,50], args.epochs)
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-3)
 	print(args)
-	# plot network
-	# vizNet(model, args.modeldir)
-
-	# if args.distributed:
-	# 	dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url, world_size=args.world_size,rank=0)
-	# 	model.cuda()
-	# 	model = torch.nn.parallel.DistributedDataParallel(model)
 	model=torch.nn.DataParallel(model,range(args.gpu))
 	trainloader, valloader = get_data(args)
-
-	# critertion = torch.nn.CrossEntropyLoss(weight=torch.Tensor([5,5,5,1,5,1,1,1,1,])).cuda()
 	critertion = torch.nn.CrossEntropyLoss().cuda()
-	# critertion=HEM_Loss(ratio=0.8)
 	if args.evaluate:
 		evaluate(valloader, model, critertion)
 		return
@@ -105,7 +95,7 @@ def train(trainloader, model, criterion, optimizer, epoch):
 		data_time.update(time.time() - end)
 		input, target = input.cuda(), target.cuda()
 		out1,out2= model(input,target)
-		loss = criterion(out1, target)
+		loss = criterion(out1, target)+criterion(out2,target)
 		prec1, prec2 = accuracy(out1, target,dir=None, path=None, topk=(1, 2))
 		losses.update(loss.item(), input.size(0))
 		top1.update(prec1[0], input.size(0))

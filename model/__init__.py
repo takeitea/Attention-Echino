@@ -8,3 +8,6 @@ from .vgg_v1 import *
 from .se_inception import *
 from .se_resnet import *
 from .resnet_mask import resnet18_mask
+from .resnet_rf import resnet18_rf
+from .resnet_atten import resnet50_atten,resnet18_atten
+from .drn import *

@@ -4,14 +4,15 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from .anchor import generator_default_anchor_maps,hard_nms
-from .MPNCOV import MPNCOV
+from .BCNN import BCNN
+import pretrainedmodels
 CAT_NUM=4
 PROPOSAL_NUM=6
 
 class ProposalNet(nn.Module):
 	def __init__(self):
 		super(ProposalNet,self).__init__()
-		self.down1=nn.Conv2d(512,128,3,1,1)
+		self.down1=nn.Conv2d(512,128,1,1,0)
 		self.down2=nn.Conv2d(128,128,3,2,1)
 		self.down3=nn.Conv2d(128,128,3,2,1)
 
@@ -34,13 +35,12 @@ class Attention_Net(nn.Module):
 	def __init__(self,topN=4,num_classes=9):
 		super(Attention_Net,self).__init__()
 		self.pretrained_model=resnet18(pretrained=True)
-		# self.pretrained_model.avgpool=nn.AdaptiveAvgPool2d(1)
-		self.pretrained_model.avgpool=MPNCOV(input_dim=512,dimension_reduction=256)
-		self.pretrained_model.fc=nn.Linear(32896,num_classes)
+		self.pretrained_model.avgpool=nn.AdaptiveAvgPool2d(1)
+		self.pretrained_model.fc=nn.Linear(512,num_classes)
 		self.proposal_net=ProposalNet()
 		self.topN=topN
-		self.concat_net=nn.Linear(32896*(CAT_NUM+1),num_classes)
-		self.partcls_net=nn.Linear(32896,num_classes)
+		self.concat_net=nn.Linear(512*(CAT_NUM+1),num_classes)
+		self.partcls_net=nn.Linear(512,num_classes)
 		_,edge_anchors,_=generator_default_anchor_maps()
 		# TODO  next line
 		self.pad_size=224
@@ -61,30 +61,19 @@ class Attention_Net(nn.Module):
 		top_n_index=top_n_cdds[:,:,-1].astype(np.int)
 		top_n_index=torch.from_numpy(top_n_index).cuda()
 		top_n_prob=torch.gather(rpn_score,dim=1,index=top_n_index)
-
 		part_imgs=torch.zeros([batch,self.topN,3,224,224]).cuda()
 		for i in range(batch):
 			for j in range(self.topN):
 				[y0,x0,y1,x1]=top_n_cdds[i][j,1:5].astype(np.int)
 				part_imgs[i:i+1,j]=F.interpolate(x_pad[i:i+1,:,y0:y1,x0:x1],size=(224,224),mode='bilinear',align_corners=True)
-
 		part_imgs=part_imgs.view(batch*self.topN,3,224,224)
-		# self.plot_draw_box(part_imgs)
 		_,_,part_features=self.pretrained_model(part_imgs.detach())
-
 		part_feature=part_features.view(batch,self.topN,-1)
 		part_feature=part_feature[:,:CAT_NUM,...].contiguous()
-		# lstm_input=torch.cat([part_feature,feature.unsqueeze(1)],dim=1)
-		# self.bilstm.flatten_parameters()
-		# bilstm_out1,bilstm_out2=self.bilstm(lstm_input)
 		part_feature=part_feature.view(batch,-1)
 		concat_out=torch.cat([part_feature,feature],dim=1)
 
 		concat_logist=self.concat_net(concat_out)
-
-
-		# all_logits=F.log_softmax(bilstm_out1)
-
 		raw_logist=resnet_out
 
 		part_logits=self.partcls_net(part_features).view(batch,self.topN,-1)
