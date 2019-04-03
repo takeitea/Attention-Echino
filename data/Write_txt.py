@@ -80,7 +80,7 @@ def make_dataset(dir, class_to_idx, extensions):
 
 class C9:
 
-    def __init__(self, root='../datafolder/C2_MASK_ROI/ROI/image/val', dims=[215, 215, 1],
+    def __init__(self, root='../datafolder/c2_mask/ROI/image/train', dims=[215, 215, 1],
                  saved_path='./h5', extensions=IMG_EXTENSIONS, transform=None,
                  loader=cv_loader,gray=True,
                  target_transform=None):
@@ -157,7 +157,7 @@ def main():
     data = c9.load_c9(is_shuffle=False)
 
     print(data["data"].shape)
-    c9.write_txt('val')
+    c9.write_txt('train')
 
 if __name__ == '__main__':
     main()

@@ -24,7 +24,7 @@ class AvgMeter(object):
 		self.avg = self.sum / self.count
 
 
-def accuracy(output, target, dir, path, topk=(1,)):
+def accuracy(output, target, topk=(1,)):
 	"""
 	compute the precision@k for the value of k
 	:param output:
@@ -36,21 +36,16 @@ def accuracy(output, target, dir, path, topk=(1,)):
 	with torch.no_grad():
 		maxk = max(topk)
 		batch_size = target.size(0)
-		# if maxk>=output.size(1):
-			# maxk=1
 		_, pred = output.topk(maxk, 1)
 		pred = pred.t()
-		if path:
-			for i in range(batch_size):
-				with open(os.path.join(dir, 'result.txt'), 'a') as L:
-					L.writelines([path[i], ' ', str(pred[0, i].item()), '\n'])
 		correct = pred.eq(target.view(1, -1)).expand_as(pred)
 		res = []
 		for k in topk:
 			correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
 			res.append(correct_k.mul(100.0 / batch_size))
 		return res
-
+def save_test_txt(output,dir,path):
+	pass
 
 def accuracy_last_epoch(output, target, path, dir, topk=(1,)):
 	"""

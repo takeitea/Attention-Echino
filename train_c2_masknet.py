@@ -1,17 +1,19 @@
 import argparse
+import torch.nn as nn
 import torch
 import time
 import numpy as np
 import torch.optim as optim
 import os
 import scipy.io as sio
-from model import drn_c_26_mask
+from model import Masknet18
+from utils import visualize_atten_softmax, visualize_atten_sigmoid
 from utils import AvgMeter, accuracy, plot_curve, restore
 from utils import vizNet, Stats, save_checkpoint, loadpartweight
-from data import get_data_mask
+from data import get_data
+from loss import HEM_Loss
 import shutil
-import torch.nn.functional  as F
-import cv2
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 best_prec1 = 0
 
@@ -20,14 +22,14 @@ def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of resnet18")
 	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
 	arg.add_argument('--store_per_epoch', default=False)
-	arg.add_argument('--epochs', default=55)
+	arg.add_argument('--epochs', default=35)
 	arg.add_argument('--num_classes', default=2, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
 	arg.add_argument('--img_size', help='the input size', default=224)
-	arg.add_argument('--dir', help='the dataset root', default='./datafolder/C2_MASK_ROI/ROI/image/')
+	arg.add_argument('--dir', help='the dataset root', default='./datafolder/c2_mask/ROI/image/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='drn_mask')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='drc_')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
@@ -36,9 +38,8 @@ def arg_pare():
 	arg.add_argument('--dist_backend', default='gloo', type=str, help='distributed backend')
 	arg.add_argument('--evaluate', default=False, help='whether to evaluate only')
 	arg.add_argument('--mean5', default=35, help="the first epoch to calculate the 5-epoch means")
-	arg.add_argument('--start_epoch', default=0)
-	# arg.add_argument('--resume', default='./ResNet18_mask/checkpoint.pth.tar', help="whether to load checkpoint")
 	arg.add_argument('--resume', default=False, help="whether to load checkpoint")
+	arg.add_argument('--start_epoch', default=0)
 	return arg.parse_args()
 
 
@@ -48,8 +49,10 @@ args = arg_pare()
 def main():
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
-	model =drn_c_26_mask(num_classes=1).cuda()
-	LR = Learning_rate_generater('step', [30, 40], args.epochs)
+	model = Masknet18().cuda()
+
+	model.fc=nn.Linear(512,2).cuda()
+	LR = Learning_rate_generater('step', [14, 20], args.epochs)
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-4)
 	print(args)
 	# plot network
@@ -57,10 +60,10 @@ def main():
 	if args.resume:
 		restore(args, model, opt, istrain=not args.evaluate)
 	model = torch.nn.DataParallel(model, range(args.gpu))
-	trainloader, valloader =get_data_mask(args)
-	critertion = torch.nn.BCELoss().cuda()
+	trainloader, valloader = get_data(args)
+	critertion = torch.nn.CrossEntropyLoss()
 	if args.evaluate:
-		evaluate(valloader, model, critertion)
+		evaluate(valloader, model, critertion,)
 		return
 	if os.path.exists(args.modeldir):
 		shutil.rmtree(args.modeldir)
@@ -74,8 +77,8 @@ def main():
 
 		adjust_learning_rate(opt, LR.lr_factor, epoch)
 		trainObj, top1, top2 = train(trainloader, model, critertion, opt, epoch)
-		valObj, prec1, prec2 = evaluate(valloader, model, critertion,is_last,args,epoch)
-		# stats._update(trainObj, top1, top2, valObj, prec1, prec2)
+		valObj, prec1, prec2 = evaluate(valloader, model, critertion,is_last,args)
+		stats._update(trainObj, top1, top2, valObj, prec1, prec2)
 
 		filename = []
 		if args.store_per_epoch:
@@ -99,17 +102,16 @@ def train(trainloader, model, criterion, optimizer, epoch):
 	top2 = AvgMeter()
 	model.train()
 	end = time.time()
-	for i, (input, target,true_mask) in enumerate(trainloader):
+	for i, (input, target) in enumerate(trainloader):
 		data_time.update(time.time() - end)
-		input, target, true_mask = input.cuda(), target.cuda().long(),true_mask.cuda()
-		mask= model(input)
-		# prec1, prec2 = accuracy(out1, target.long(), topk=(1,2))
-		# loss =F.binary_cross_entropy_with_logits(mask,true_mask.unsqueeze(1))
-		# loss=F.binary_cross_entropy(mask,true_mask.unsqueeze(1))
-		loss=criterion(mask,true_mask.unsqueeze(1))
+		input, target = input.cuda(), target.cuda()
+		out1,_,_ = model(input)
+		loss = criterion(out1, target)
+		prec1, prec2 = accuracy(out1, target, topk=(1,2))
 		losses.update(loss.item(), input.size(0))
-		# top1.update(prec1[0], input.size(0))
-		# top2.update(prec2[0], input.size(0))
+		top1.update(prec1[0], input.size(0))
+		top2.update(prec2[0], input.size(0))
+
 		optimizer.zero_grad()
 		loss.backward()
 		optimizer.step()
@@ -127,7 +129,7 @@ def train(trainloader, model, criterion, optimizer, epoch):
 	return losses.avg, top1.avg, top2.avg
 
 
-def evaluate(valloader, model, criterion,is_last,args,epoch):
+def evaluate(valloader, model, criterion,is_last,args):
 	batch_time = AvgMeter()
 	losses = AvgMeter()
 	top1 = AvgMeter()
@@ -135,14 +137,16 @@ def evaluate(valloader, model, criterion,is_last,args,epoch):
 	model.eval()
 	with torch.no_grad():
 		end = time.time()
-		for i, (input, target,path, true_mask) in enumerate(valloader):
-			input, target,true_mask = input.cuda(), target.cuda().long(),true_mask.cuda()
-			mask = model(input)
-			loss=criterion(mask,true_mask.unsqueeze(1))
-			if epoch%5==0:
-				plot_mask(input,mask)
+		for i, (input, target, path) in enumerate(valloader):
+
+			input, target = input.cuda(), target.cuda()
+			output1,_,_ = model(input)
+			loss = criterion(output1, target)
 			path=path if is_last else None
+			prec1, prec2 = accuracy(output1, target, topk=(1, 2))
 			losses.update(loss.item(), input.size(0))
+			top1.update(prec1[0], input.size(0))
+			top2.update(prec2[0], input.size(0))
 			batch_time.update(time.time() - end)
 
 			if i % args.print_freq == 0:
@@ -214,20 +218,6 @@ def adjust_learning_rate(optimizer, lr_factor, epoch):
 	for params_group in optimizer.param_groups:
 		params_group['lr'] = lr_factor[epoch] * args.lr
 
-def plot_mask(input,masks):
-	mean = np.expand_dims(np.expand_dims([0.275, 0.278, 0.284], axis=1), axis=1)
-	std = np.expand_dims(np.expand_dims([0.170, 0.171, 0.173], axis=1), axis=1)
-	input = input.cpu().numpy()
-	for i in range(input.shape[0]):
-		image = np.moveaxis((input[i] * std + mean), 0, -1) * 255
-		image=image.astype(np.uint8).copy()
-		mask=masks[i]
-		mask=mask.cpu().numpy()*255
-		mask=np.moveaxis(mask,0,-1).astype(np.uint8())
-		mask=cv2.resize(mask,(224,224))
-		mask= cv2.cvtColor(mask,cv2.COLOR_GRAY2BGR)
-		image= cv2.addWeighted(image,1.6,mask,1.0,20)
-		cv2.imshow('image', image)
-		cv2.waitKey(200)
+
 if __name__ == '__main__':
 	main()

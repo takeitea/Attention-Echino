@@ -23,7 +23,6 @@ def conv1x1(in_planes, out_planes, stride=1):
 	"""1x1 convolution"""
 	return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
-
 class BasicBlock(nn.Module):
 	expansion = 1
 
@@ -107,10 +106,7 @@ class ResNet(nn.Module):
 		self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
 		self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
 		self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
-		self.get_mask=self._get_mask(512,1)
-		self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-		self.fc = nn.Linear(512 * block.expansion, num_classes)
-
+		self.get_mask=self._get_mask(256,1)
 		for m in self.modules():
 			if isinstance(m, nn.Conv2d):
 				nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -129,16 +125,11 @@ class ResNet(nn.Module):
 					nn.init.constant_(m.bn2.weight, 0)
 	def _get_mask(self,planes,outplanes=1):
 		layers=[]
-		layers.append(nn.ConvTranspose2d(planes,256,2,2))
-		layers.append(nn.BatchNorm2d(256))
-		layers.append(nn.ReLU())
-		layers.append(nn.ConvTranspose2d(256,128,2,2))
+		layers.append(nn.Conv2d(planes,128,1,1))
 		layers.append(nn.BatchNorm2d(128))
 		layers.append(nn.ReLU())
-		layers.append(nn.ConvTranspose2d(128,64,2,2))
-		layers.append(nn.BatchNorm2d(64))
-		layers.append(nn.ReLU())
-		layers.append(nn.ConvTranspose2d(64,1,2,2))
+		layers.append(nn.Conv2d(128,outplanes,1,1))
+		layers.append(nn.BatchNorm2d(outplanes))
 		layers.append(nn.Sigmoid())
 		return nn.Sequential(*layers)
 	def _make_layer(self, block, planes, blocks, stride=1):
@@ -166,16 +157,17 @@ class ResNet(nn.Module):
 
 		x = self.layer1(x)
 		x = self.layer2(x)
+		# mask1 = self.get_mask(x)
 		x = self.layer3(x)
+		mask1 = self.get_mask(x)
 		x = self.layer4(x)
-		mask=self.get_mask(x)
 		feature1 = x
-		x = self.avgpool(x)
+		# x = self.avgpool(x)
 		x = x.view(x.size(0), -1)
-		# x = nn.Dropout(p=0.5)(x)
+		x = nn.Dropout(p=0.5)(x)
 		feature2 = x
 		x = self.fc(x)
-		return x, feature1, feature2,mask
+		return x, feature1, feature2,mask1
 
 
 def resnet18_mask(pretrained=False, **kwargs):

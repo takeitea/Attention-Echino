@@ -1,14 +1,16 @@
 import argparse
+import torch.nn as nn
 import shutil
 
 import torch
 import time
 import os
 from eval_F1_acc import MY_EVALUATE
-from model import resnet18
+from model import resnet18,drn_c_26
 from utils import AvgMeter, accuracy, plot_curve,restore
 from utils import vizNet, Stats, save_checkpoint,loadpartweight
 import tqdm
+
 from data import get_data
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -26,7 +28,7 @@ def arg_pare():
 	arg.add_argument('--img_size', help='the input size', default=224)
 	arg.add_argument('--dir', help='the dataset root', default='/data/wen/Dataset/data_maker/classifier/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='ResNet18_resize')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='./result/DRN_aloss')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=None, type=str)
@@ -34,7 +36,7 @@ def arg_pare():
 	arg.add_argument('--dist_url', default='tcp://127.0.0.01:123', type=str, help='url used to set up')
 	arg.add_argument('--dist_backend', default='gloo', type=str, help='distributed backend')
 	arg.add_argument('--evaluate', default=True, help='whether to evaluate only')
-	arg.add_argument("--resume",default='ResNet18_resize'+'/model_best.pth.tar')
+	arg.add_argument("--resume",default='./result'+'/DRN_aloss'+'/model_best.pth.tar')
 	return arg.parse_args()
 
 
@@ -44,7 +46,8 @@ args = arg_pare()
 def main():
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
-	model=resnet18(pretrained=True,num_classes=9).cuda()
+	model=drn_c_26(pretrained=False,num_classes=9).cuda()
+	model.fc=nn.Linear(512,9)
 	restore(args,model,optimizer=None,istrain=False)
 	trainloader, valloader = get_data(args)
 
@@ -63,7 +66,7 @@ def evaluate(valloader, model,dir):
 			input, target = input.cuda(), target.cuda()
 			model=model.cuda()
 			output= model(input)
-			prec1, prec2 = accuracy(output[0], target,dir,path=path, topk=(1, 2))
+			prec1, prec2 = accuracy(output, target,dir,path=path, topk=(1, 2))
 			top1.update(prec1[0], input.size(0))
 			top2.update(prec2[0], input.size(0))
 			batch_time.update(time.time() - end)

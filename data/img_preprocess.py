@@ -59,13 +59,13 @@ def preprocess_strategy(dataset='ImageNet'):
 			transforms.RandomResizedCrop(224),
 			transforms.RandomHorizontalFlip(),
 			transforms.ToTensor(),
-			normalize,
+			normalize
 		])
 		val_transforms = transforms.Compose([
 			transforms.Resize(250),
 			transforms.CenterCrop(224),
 			transforms.ToTensor(),
-			normalize,
+			normalize
 		])
 	elif dataset.startswith('c9'):
 		train_transforms = \
@@ -94,6 +94,12 @@ def preprocess_strategy(dataset='ImageNet'):
 			ToTensor()
 		])
 		target_transform = get_target_transform()
+	elif dataset.startswith('tsne'):
+		trans=transforms.Compose([
+			transforms.ToTensor(),
+			normalize,
+		])
+		return trans
 	else:
 		raise KeyError("=> transform method of '{}' does not exist!".format(dataset))
 	return train_transforms, val_transforms
@@ -129,7 +135,7 @@ class ImgAugTransform:
 		aug_mask=seg_det.augment_image(mask)
 		aug_norm = self.normalize(aug_img)
 		# aug_mask = seg_det.augment_segmentation_maps([seg_on_img])[0].arr
-		aug_mask =cv2.resize(aug_mask,(128,128))
+		aug_mask =cv2.resize(aug_mask,(28,28))
 		# cv2.imshow("aug_mask",aug_mask*255)
 		# cv2.waitKey(2000)
 

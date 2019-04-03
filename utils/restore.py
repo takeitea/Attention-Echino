@@ -48,8 +48,8 @@ def restore(args, model, optimizer, istrain=True, including_opt=False):
 
 def _model_load(model, pretrained_dict):
 	model_dict = model.state_dict()
-	if model_dict.keys()[0].startswith('module.'):
-		pretrained_dict = {'module.' + k: v for k, v in pretrained_dict.items()}
+	# if model_dict.keys()[0].startswith('module.'):
+	# 	pretrained_dict = {'module.' + k: v for k, v in pretrained_dict.items()}
 	pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict.keys()}
 	print("weights cannot be loaded:")
 	print([k for k in model_dict.keys() if k not in pretrained_dict.keys()])

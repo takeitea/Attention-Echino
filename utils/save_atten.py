@@ -217,13 +217,13 @@ class SAVE_ATTEN(object):
 							folder = suffix + '_' + str(pre_ffix)
 
 						if k == pre_ffix:
-							save_dir = os.path.join(save_dir, 'match', folder)
+							save_dir_ = os.path.join(save_dir, 'match', folder)
 						else:
-							save_dir = os.path.join(save_dir, 'missmatch', folder)
-						if not os.path.exists(save_dir):
-							os.makedirs(save_dir)
-						shutil.copyfile(img_path[i], os.path.join(save_dir, img_name + '_.jpg'))
-						cv2.imwrite(os.path.join(save_dir, img_name + '.png'), save_img)
+							save_dir_ = os.path.join(save_dir, 'missmatch', folder)
+						if not os.path.exists(save_dir_):
+							os.makedirs(save_dir_)
+						shutil.copyfile(img_path[i], os.path.join(save_dir_, img_name + '_.jpg'))
+						cv2.imwrite(os.path.join(save_dir_, img_name + '.png'), save_img)
 
 	def get_atten_map(self, img_path, atten, save_dir=None, size=(321, 321)):
 		'''
