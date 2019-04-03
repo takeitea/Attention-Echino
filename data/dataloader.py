@@ -4,6 +4,7 @@ import torchvision.datasets
 import torchvision.transforms as transforms
 import torch.utils.data
 from PIL import Image
+import matplotlib.pyplot as plt
 from torch.utils.data import distributed
 from torchvision.datasets import DatasetFolder
 import numpy as np
@@ -47,13 +48,35 @@ def get_data(args):
 	valset = ValFolder(root=args.dir + 'val', transform=val_train)
 	trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=32,
 											  pin_memory=True)
+	valloader = torch.utils.data.DataLoader(valset, batch_size=50, shuffle=False, num_workers=32,
+											pin_memory=True)
+	return trainloader, valloader
+
+def get_with_mask(args):
+	"""
+	get the masked images
+		old_dict = model.state_dict()
+		new_dict = model_zoo.load_url(model_urls['resnet18'])
+		for k, v in new_dict.items():
+			if k in old_dict.keys() and old_dict[k].size() == new_dict[k].size():
+				old_dict[k] = v
+		old_dict.update()
+		model.load_state_dict(old_dict, strict=False):param args:
+	:return:
+	"""
+	trans_train, val_train = preprocess_strategy()
+	trainset = MaskedFolder(root=args.dir + 'train', transform=trans_train)
+	valset = MaskedFolder(root=args.dir + 'val', transform=val_train)
+	trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=32,
+											  pin_memory=True)
 	valloader = torch.utils.data.DataLoader(valset, batch_size=args.batch_size, shuffle=False, num_workers=32,
 											pin_memory=True)
 	return trainloader, valloader
 
+
 def get_data_mask(args, test_path=False):
 
-	input_size = int(250)
+	input_size = int(224)
 	crop_size = int(224)
 	tsfm_train = ImgAugTransform(input_size, crop_size)
 	func_transforms = []
@@ -61,11 +84,11 @@ def get_data_mask(args, test_path=False):
 	func_transforms.append(transforms.CenterCrop(crop_size))
 	func_transforms.append(transforms.ToTensor())
 	func_transforms.append(transforms.Normalize(MEANS,STDS))
-	tsfm_test = transforms.Compose(func_transforms)
+	# tsfm_test = transforms.Compose(func_transforms)
+	tsfm_test=ImgAugTransform(input_size,crop_size)
+	img_train = MaskFolder(datalist_file='./datafolder/c2_mask/train_list.txt', mask=True, transform=tsfm_train)
 
-	img_train = MaskFolder(datalist_file='./datafolder/C2_MASK_ROI/train_list.txt', mask=True, transform=tsfm_train)
-
-	img_test = MaskFolder('./datafolder/C2_MASK_ROI/val_list.txt',mask=False, transform=tsfm_test, with_path=True)
+	img_test = MaskFolder('./datafolder/c2_mask/val_list.txt',mask=True, transform=tsfm_test, with_path=True)
 	train_loader = torch.utils.data.DataLoader(img_train, batch_size=args.batch_size, shuffle=True, num_workers=32)
 	val_loader = torch.utils.data.DataLoader(img_test, batch_size=args.batch_size, shuffle=False, num_workers=32)
 	return train_loader, val_loader
@@ -123,7 +146,81 @@ class MyFolder(DatasetFolder):
 			return sample, target, path
 		return sample, target
 
+class MaskedFolder(DatasetFolder):
+	"""A generic data loader where the images are arranged in this way: ::
 
+		root/dog/xxx.png
+		root/dog/xxy.png
+		root/dog/xxz.png
+
+		root/cat/123.png
+		root/cat/nsdf3.png
+		root/cat/asd932_.png
+
+	Args:
+		root (string): Root directory path.
+		transform (callable, optional): A function/transform that  takes in an PIL image
+			and returns a transformed version. E.g, ``transforms.RandomCrop``
+		target_transform (callable, optional): A function/transform that takes in the
+			target and transforms it.
+		loader (callable, optional): A function to load an image given its path.
+
+	 Attributes:
+		classes (list): List of the class names.
+		class_to_idx (dict): Dict with items (class_name, class_index).
+		imgs (list): List of (image path, class_index) tuples
+	"""
+
+	def __init__(self, root, transform=None, target_transform=None, with_path=None,
+				 loader=default_loader):
+		self.with_path = with_path
+		self.root=root
+		self.datpad=re.compile(r'(.*)/(.*)/(.*/.*/.*)(\.jpg$)')
+		super(MaskedFolder, self).__init__(root, loader, IMG_EXTENSIONS,
+									   transform=transform,
+									   target_transform=target_transform)
+		self.imgs = self.samples
+
+	def __getitem__(self, index):
+		"""
+		Args:
+			index (int): Index
+
+		Returns:
+			tuple: (sample, target) where target is class_index of the target class.
+		"""
+		path, target = self.samples[index]
+
+		m=self.datpad.match(path)
+		mask1_path=os.path.join(m.group(1),'mask',m.group(3)+'.png')
+		mask2_path=os.path.join(m.group(1),'mask_hollow',m.group(3)+'.png')
+
+		sample = self.loader(path)
+		mask1=self.loader(mask1_path)
+		mask2=self.loader(mask2_path)
+		sample=np.array(sample)
+		mask1=np.array(mask1)
+		mask2=np.array(mask2)
+		mask1[mask1>0]=255
+		mask2[mask2>0]=255
+		# print(m.group(3))
+		# if sample.shape != mask1.shape or sample.shape!=mask2.shape:
+		# 	print(m.group(3))
+		sample[...,1]=mask1[...,1]
+		sample[...,2]=mask2[...,2]
+		# plt.imshow(sample)
+		# plt.show()
+		sample=Image.fromarray(sample)
+
+		if self.transform is not None:
+			# data = {"image": np.array(sample)}
+			sample = self.transform(sample)
+		# sample = self.transform(**data)['image']
+		if self.target_transform is not None:
+			target = self.target_transform(target)
+		if self.with_path:
+			return sample, target, path
+		return sample, target
 class ValFolder(MyFolder):
 	def __init__(self, root, transform=None, target_transform=None, with_path=True, loader=default_loader):
 		self.with_path = with_path
@@ -149,7 +246,7 @@ class MaskFolder(Dataset):
 	""" Echinococcosis dataset with mask
 	"""
 
-	def __init__(self, datalist_file='datafolder/C2_MASK_ROI/train_list.txt',root_dir='/home/wen/PycharmProjects/Attention-Echino',
+	def __init__(self, datalist_file='datafolder/c2_mask/train_list.txt',root_dir='/home/wen/PycharmProjects/Attention-Echino',
 				 mask=True, transform=None, with_path=False):
 		"""
 

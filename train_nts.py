@@ -30,7 +30,7 @@ def arg_pare():
 	arg.add_argument('--img_size', help='the input size', default=224)
 	arg.add_argument('--dir', help='the dataset root', default='datafolder/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print information')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='NTS_aloss')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='NTS')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
@@ -56,7 +56,7 @@ def main():
 	# model=loadpartweight(model)
 	model = Attention_Net(topN=6,num_classes=args.num_classes).cuda()
 
-	LR = Learning_rate_generater('step', [30, 35], args.epochs)
+	LR = Learning_rate_generater('step', [20, 30], args.epochs)
 	params_list = [{'params': model.pretrained_model.parameters(), 'lr': args.lr,
 					'weight_decay': args.weight_decay}, ]
 	params_list.append({'params': model.proposal_net.parameters(), 'lr': args.lr,
@@ -126,7 +126,7 @@ def train(trainloader, model, criterion, optimizer, epoch, multiloss):
 		partcls_loss = criterion(part_logits.view(input.size(0) * PROPOSAL_NUM, -1),
 								 target.unsqueeze(1).repeat(1, PROPOSAL_NUM).view(-1))
 		# kl_loss=KL_Loss(raw_logits,part_logits,target,tmp=20)
-		total_loss = raw_loss + rank_loss + partcls_loss+concat_loss+5*aloss(raw_logits,target)
+		total_loss = raw_loss + rank_loss + partcls_loss+concat_loss
 		total_loss.backward()
 		optimizer.step()
 		prec1, prec2 = accuracy_lstm(all_logits, target,args.modeldir, path=None, topk=(1, 2))

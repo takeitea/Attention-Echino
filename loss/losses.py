@@ -113,6 +113,8 @@ class Auxiliary_Loss(nn.CrossEntropyLoss):
 			if label in pred[:,inx]:
 				idxs.append(inx)
 		idxs=torch.Tensor(idxs).cuda().long()
+		if idxs is []:
+			return Variable(torch.zeros(1).cuda())
 		output_hard=output.index_select(0,idxs)
 		target_hard=target.index_select(0,idxs)
 		return F.cross_entropy(output_hard,target_hard)
