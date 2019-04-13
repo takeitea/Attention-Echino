@@ -55,22 +55,26 @@ def get_data(args):
 	return trainloader, valloader
 
 
-def get_nature():
-	root_base='/data/wen/data/fgvc9/'
-	train_file=root_base+'input/train2019.json'
-	val_file= root_base+'input/val2019.json'
-	test_file=root_base+ 'input/test2019.json'
-	root=root_base+'input/train_val2019/'
-	test_dataset=INAT(root='./input/test2019/',ann_file=test_file,is_train=False)
-	train_dataset=INAT(root=root,ann_file=train_file,is_train=True)
-	val_dataset=INAT(root=root,ann_file=val_file,is_train=False)
-	train_loader=torch.utils.data.DataLoader(train_dataset,batch_size=80,shuffle=True,
-											 num_workers=32,pin_memory=True)
-	val_loader=torch.utils.data.DataLoader(val_dataset,batch_size=80,shuffle=False,num_workers=32,pin_memory=True)
-	test_loader=torch.utils.data.DataLoader(test_dataset,batch_size=80,shuffle=False,num_workers=32,pin_memory=True)
-	return train_loader,val_loader,test_loader
+def get_nature(is_test):
+	root_base = '/data/wen/data/fgvc9/'
+	train_file = root_base + 'input/train2019.json'
+	val_file = root_base + 'input/val2019.json'
+	test_file = root_base + 'input/test2019.json'
+	root = root_base + 'input/train_val2019/'
+	if is_test:
+		test_dataset = INAT(root=root_base + 'input/test2019/', ann_file=test_file, is_train=False)
+		test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=40, shuffle=False, num_workers=32,
+												  pin_memory=True)
+		return test_loader
 
+	train_dataset = INAT(root=root, ann_file=train_file, is_train=True)
+	val_dataset = INAT(root=root, ann_file=val_file, is_train=False)
+	train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=160, shuffle=True,
+											   num_workers=32, pin_memory=True)
+	val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=160, shuffle=False, num_workers=32,
+											 pin_memory=True)
 
+	return train_loader, val_loader
 
 
 def get_with_mask(args):

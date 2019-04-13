@@ -1,4 +1,5 @@
 import argparse
+import tqdm
 import math
 import os
 import shutil
@@ -12,9 +13,10 @@ from data import get_nature
 from loss import Auxiliary_Loss
 from model import nasnetamobile
 from utils import AvgMeter, accuracy, plot_curve, restore
-from utils import Stats, save_checkpoint
+from utils import Stats, save_checkpoint, Learning_rate_generater
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+
 
 def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of train inature")
@@ -24,16 +26,14 @@ def arg_pare():
 	arg.add_argument('--num_classes', default=1010, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.0045)
 	arg.add_argument('--img_size', help='the input size', default=224)
-	arg.add_argument('--dir', help='the dataset root', default='./datafolder/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='inature')
-	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
-	arg.add_argument('--lr_method',default='step',help='method of learn rate')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='inature_pre')
+	arg.add_argument('--lr_method', default='step', help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
-	arg.add_argument('--evaluate', default=False, help='whether to evaluate only')
-	arg.add_argument('--resume', default='./result/drc_aloss/model_best.pth.tar', help="whether to load checkpoint")
+	arg.add_argument('--test', default=True, help='whether to test only')
+	arg.add_argument('--resume', default='./inature/model_best.pth.tar', help="whether to load checkpoint")
 	arg.add_argument('--start_epoch', default=0)
-	arg.add_argument('--op_file_name',default='./input/kaggle_submission.csv')
+	arg.add_argument('--op_file_name', default='./result/kaggle_submission.csv')
 	return arg.parse_args()
 
 
@@ -44,35 +44,33 @@ def main():
 	best_prec1 = 0
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
-	model = nasnetamobile(num_classes=args.num_classes,pretrained=False).cuda()
-	model.cuda()
-	LR = Learning_rate_generater('step', [17,25], args.epochs)
+	model = nasnetamobile(num_classes=args.num_classes).cuda()
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-4)
-	print(args)
-	if args.evaluate:
-		restore(args, model, opt,  istrain=not args.evaluate)
-	if not args.evaluate:
-		model = torch.nn.DataParallel(model, range(args.gpu))
-	trainloader, valloader ,testloader= get_nature()
-	critertion = torch.nn.CrossEntropyLoss()
-	if args.evaluate:
-		evaluate(valloader, model, critertion,args,True)
+	if args.test:
+		restore(args, model, opt, istrain=not args.test)
+		testloader = get_nature(args.test)
+		test(testloader, model, args)
 		return
+	LR = Learning_rate_generater('step', [17, 25], args.epochs,args)
+	print(args)
+	model = torch.nn.DataParallel(model, range(args.gpu))
+	critertion = torch.nn.CrossEntropyLoss()
+
+	trainloader, valloader = get_nature(args.test)
 	if os.path.exists(args.modeldir):
 		shutil.rmtree(args.modeldir)
 	os.mkdir(args.modeldir)
 	stats = Stats(args.modeldir, start_epoch=args.start_epoch, total_epoch=args.epochs)
 	for epoch in range(args.epochs):
-		is_best=False
-		is_last=epoch==args.epochs-1
-		# adjust_learning_rate(opt, LR.lr_factor, epoch)
-		cos_anneal_lr(opt,LR.lr,epoch)
+		is_best = False
+		# LR.adjust_learning_rate(opt, LR.lr_factor, epoch)
+		LR.cos_anneal_lr(opt, LR.lr, epoch)
 		trainObj, top1, top2 = train(trainloader, model, critertion, opt, epoch)
-		valObj, prec1, prec2 = evaluate(valloader, model, critertion,args)
+		valObj, prec1, prec2 = evaluate(valloader, model, critertion, args)
 		stats._update(trainObj, top1, top2, valObj, prec1, prec2)
-		if best_prec1<prec1:
-			best_prec1=prec1
-			is_best=True
+		if best_prec1 < prec1:
+			best_prec1 = prec1
+			is_best = True
 		filename = []
 		if args.store_per_epoch:
 			filename.append(os.path.join(args.modeldir, 'net-epoch-%s.pth.tar' % (epoch + 1)))
@@ -82,7 +80,6 @@ def main():
 		save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(), 'best_prec1': best_prec1,
 						 'optimizer': opt.state_dict()}, is_best, filename)
 		plot_curve(stats, args.modeldir, True)
-	test(testloader,model,args)
 	sio.savemat(os.path.join(args.modeldir, 'stats.mat'), {'data': stats})
 	stats.get_last5()
 
@@ -95,14 +92,14 @@ def train(trainloader, model, criterion, optimizer, epoch):
 	top2 = AvgMeter()
 	model.train()
 	end = time.time()
-	aloss=Auxiliary_Loss()
-	for i, (input,im_id, target,tax_id) in enumerate(trainloader):
+	aloss = Auxiliary_Loss()
+	for i, (input, im_id, target, tax_id) in enumerate(trainloader):
 		data_time.update(time.time() - end)
 		input, target = input.cuda(), target.cuda()
-		out1= model(input)
+		out1 = model(input)
 
 		loss = criterion(out1, target)
-		prec1, prec2 = accuracy(out1, target,topk=(1, 2))
+		prec1, prec2 = accuracy(out1, target, topk=(1, 2))
 		losses.update(loss.item(), input.size(0))
 		top1.update(prec1[0], input.size(0))
 		top2.update(prec2[0], input.size(0))
@@ -122,7 +119,8 @@ def train(trainloader, model, criterion, optimizer, epoch):
 				epoch, i, len(trainloader), batch_time=batch_time,
 				data_time=data_time, loss=losses, top1=top1, top2=top2))
 	return losses.avg, top1.avg, top2.avg
-def evaluate(valloader, model, criterion,args):
+
+def evaluate(valloader, model, criterion, args):
 	batch_time = AvgMeter()
 	losses = AvgMeter()
 	top1 = AvgMeter()
@@ -130,10 +128,10 @@ def evaluate(valloader, model, criterion,args):
 	model.eval()
 	with torch.no_grad():
 		end = time.time()
-		for i, (input,im_id, target,tax_ids) in enumerate(valloader):
+		for i, (input, im_id, target, tax_ids) in enumerate(valloader):
 			input = input.cuda()
-			target=target.cuda()
-			output1= model(input)
+			target = target.cuda()
+			output1 = model(input)
 			loss = criterion(output1, target)
 			prec1, prec2 = accuracy(output1, target, topk=(1, 2))
 			losses.update(loss.item(), input.size(0))
@@ -150,117 +148,35 @@ def evaluate(valloader, model, criterion,args):
 					top1=top1, top2=top2))
 		print(' * Prec@1 {top1.avg:.3f} Prec@2 {top2.avg:.3f}'.format(top1=top1, top2=top2))
 		return losses.avg, top1.avg, top2.avg
-def test(testloader, model,args):
+
+
+def test(testloader, model, args):
 	batch_time = AvgMeter()
 	model.eval()
 	if os.path.exists(args.op_file_name):
 		os.remove(args.op_file_name)
-	with open(args.op_file_name,'w')as L:
+	with open(args.op_file_name, 'w')as L:
 		L.write("id,predicted\n")
 	with torch.no_grad():
 		end = time.time()
-		for i, (input,im_id, target,tax_ids) in enumerate(testloader):
+		for i, (input, im_id, target, tax_ids) in tqdm.tqdm(enumerate(testloader)):
 			input = input.cuda()
-			output1= model(input)
+			output1 = model(input)
 			np_scores, pred_labels = torch.topk(output1, k=2, dim=1)
-			pred_labels=pred_labels.cpu().data.numpy()
-			save_preds(im_id,np_pred=pred_labels,filename=args.op_file_name)
+			pred_labels = pred_labels.cpu().data.numpy()
+			save_preds(im_id.numpy(), np_pred=pred_labels, filename=args.op_file_name)
 			batch_time.update(time.time() - end)
 			if i % args.print_freq == 0:
 				print('Test: [{0}/{1}]\t'
 					  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'.format(
 					i, len(testloader), batch_time=batch_time))
-class Learning_rate_generater(object):
-	"""
-	Generate a list of learning rate
-	"""
-
-	def __init__(self, method, params, total_epoch):
-		if method == 'step':
-			lr_factor, lr = self.step(params, total_epoch)
-		elif method == 'log':
-			lr_factor, lr = self.log(params, total_epoch)
-		elif method == 'exp':
-			lr_factor, lr = self.exp(params, total_epoch)
-		elif method=='cos':
-			lr_factor,lr=self.cos(params,total_epoch)
-		else:
-			raise KeyError('unknown method {}'.format(method))
-
-		self.lr_factor = lr_factor
-		self.lr = lr
-
-	def step(self, params, total_epoch):
-		lr_factor = []
-		lr = []
-		count = 0
-		base_factor = 0.1
-		for epoch in range(total_epoch):
-			if count < len(params):
-				if epoch >= params[count]:
-					count += 1
-			lr_factor.append(np.power(base_factor, count))
-			lr.append(args.lr * lr_factor[epoch])
-		return lr_factor, lr
-
-	def log(self, params, total_epoch):
-		min_, max_ = params[:2]
-		np_lr = np.logspace(min_, max_, total_epoch)
-		lr_factor = []
-		lr = []
-		for epoch in range(total_epoch):
-			lr.append(np_lr[epoch])
-			lr_factor.append(np_lr[epoch] / np_lr[0])
-		if lr[0] != args.lr:
-			args.lr = lr[0]
-		return lr_factor, lr
-
-	def cos(self,min, total_epoch):
-		lr_factor=[]
-		lr=[]
-		lr.append(args.lr)
-		for epoch in range(total_epoch-1):
-			cos_decay=0.5*(1+math.cos((epoch+1) *math.pi/total_epoch))
-			decayed=(1-min)*cos_decay+min
-			lr_factor.append(decayed)
-			lr.append(args.lr*decayed)
-		return lr_factor,lr
-	def plot_lr(self):
-		plt.figure(figsize=(8,8))
-		plt.plot(np.arange(len(self.lr)),self.lr,color='blue',linewidth=2)
-		plt.xlabel("epoch")
-		plt.ylabel("lr")
-		plt.title("lr cos anneal")
-		plt.show()
 
 
-def save_preds(im_ids,np_pred,filename):
-	with open(filename,'a') as L:
+def save_preds(im_ids, np_pred, filename):
+	with open(filename, 'a') as L:
 		for ii in range(len(im_ids)):
-			L.write(str(im_ids[ii])+','+' '.join(str(x) for x in np_pred[ii,:])+'\n')
+			L.write(str(im_ids[ii]) + ',' + ' '.join(str(x) for x in np_pred[ii, :]) + '\n')
 
-def adjust_learning_rate(optimizer, lr_factor, epoch):
-	"""
-	:param optimizer:
-	:param lr_factor:
-	:param epoch:
-	:return:
-	"""
-	print('the lr is set to {0:.5f}'.format(lr_factor[epoch] * args.lr))
-	for params_group in optimizer.param_groups:
-		params_group['lr'] = lr_factor[epoch] * args.lr
-
-
-def cos_anneal_lr(optimizer,lr,epoch):
-	"""
-
-	:param optimizer:
-	:param lr:
-	:param epoch:
-	:return:
-	"""
-	for params_group in optimizer.param_groups:
-		params_group['lr']=lr[epoch]
 
 if __name__ == '__main__':
 	main()
