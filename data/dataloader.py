@@ -1,5 +1,6 @@
 import torch
-from .img_preprocess import preprocess_strategy,preprocess_strategy_with_mask
+import json
+from .img_preprocess import preprocess_strategy, preprocess_strategy_with_mask
 import torchvision.datasets
 import torchvision.transforms as transforms
 import torch.utils.data
@@ -12,6 +13,7 @@ import os
 import re
 from torch.utils.data import Dataset
 from .img_preprocess import ImgAugTransform
+
 MEANS = [0.275, 0.278, 0.284]
 STDS = [0.170, 0.171, 0.173]
 
@@ -52,6 +54,25 @@ def get_data(args):
 											pin_memory=True)
 	return trainloader, valloader
 
+
+def get_nature():
+	root_base='/data/wen/data/fgvc9/'
+	train_file=root_base+'input/train2019.json'
+	val_file= root_base+'input/val2019.json'
+	test_file=root_base+ 'input/test2019.json'
+	root=root_base+'input/train_val2019/'
+	test_dataset=INAT(root='./input/test2019/',ann_file=test_file,is_train=False)
+	train_dataset=INAT(root=root,ann_file=train_file,is_train=True)
+	val_dataset=INAT(root=root,ann_file=val_file,is_train=False)
+	train_loader=torch.utils.data.DataLoader(train_dataset,batch_size=80,shuffle=True,
+											 num_workers=32,pin_memory=True)
+	val_loader=torch.utils.data.DataLoader(val_dataset,batch_size=80,shuffle=False,num_workers=32,pin_memory=True)
+	test_loader=torch.utils.data.DataLoader(test_dataset,batch_size=80,shuffle=False,num_workers=32,pin_memory=True)
+	return train_loader,val_loader,test_loader
+
+
+
+
 def get_with_mask(args):
 	"""
 	get the masked images
@@ -75,7 +96,6 @@ def get_with_mask(args):
 
 
 def get_data_mask(args, test_path=False):
-
 	input_size = int(224)
 	crop_size = int(224)
 	tsfm_train = ImgAugTransform(input_size, crop_size)
@@ -83,15 +103,16 @@ def get_data_mask(args, test_path=False):
 	func_transforms.append(transforms.Resize(input_size))
 	func_transforms.append(transforms.CenterCrop(crop_size))
 	func_transforms.append(transforms.ToTensor())
-	func_transforms.append(transforms.Normalize(MEANS,STDS))
+	func_transforms.append(transforms.Normalize(MEANS, STDS))
 	# tsfm_test = transforms.Compose(func_transforms)
-	tsfm_test=ImgAugTransform(input_size,crop_size)
+	tsfm_test = ImgAugTransform(input_size, crop_size)
 	img_train = MaskFolder(datalist_file='./datafolder/c2_mask/train_list.txt', mask=True, transform=tsfm_train)
 
-	img_test = MaskFolder('./datafolder/c2_mask/val_list.txt',mask=True, transform=tsfm_test, with_path=True)
+	img_test = MaskFolder('./datafolder/c2_mask/val_list.txt', mask=True, transform=tsfm_test, with_path=True)
 	train_loader = torch.utils.data.DataLoader(img_train, batch_size=args.batch_size, shuffle=True, num_workers=32)
 	val_loader = torch.utils.data.DataLoader(img_test, batch_size=args.batch_size, shuffle=False, num_workers=32)
 	return train_loader, val_loader
+
 
 class MyFolder(DatasetFolder):
 	"""A generic data loader where the images are arranged in this way: ::
@@ -146,6 +167,7 @@ class MyFolder(DatasetFolder):
 			return sample, target, path
 		return sample, target
 
+
 class MaskedFolder(DatasetFolder):
 	"""A generic data loader where the images are arranged in this way: ::
 
@@ -174,11 +196,11 @@ class MaskedFolder(DatasetFolder):
 	def __init__(self, root, transform=None, target_transform=None, with_path=None,
 				 loader=default_loader):
 		self.with_path = with_path
-		self.root=root
-		self.datpad=re.compile(r'(.*)/(.*)/(.*/.*/.*)(\.jpg$)')
+		self.root = root
+		self.datpad = re.compile(r'(.*)/(.*)/(.*/.*/.*)(\.jpg$)')
 		super(MaskedFolder, self).__init__(root, loader, IMG_EXTENSIONS,
-									   transform=transform,
-									   target_transform=target_transform)
+										   transform=transform,
+										   target_transform=target_transform)
 		self.imgs = self.samples
 
 	def __getitem__(self, index):
@@ -191,26 +213,26 @@ class MaskedFolder(DatasetFolder):
 		"""
 		path, target = self.samples[index]
 
-		m=self.datpad.match(path)
-		mask1_path=os.path.join(m.group(1),'mask',m.group(3)+'.png')
-		mask2_path=os.path.join(m.group(1),'mask_hollow',m.group(3)+'.png')
+		m = self.datpad.match(path)
+		mask1_path = os.path.join(m.group(1), 'mask', m.group(3) + '.png')
+		mask2_path = os.path.join(m.group(1), 'mask_hollow', m.group(3) + '.png')
 
 		sample = self.loader(path)
-		mask1=self.loader(mask1_path)
-		mask2=self.loader(mask2_path)
-		sample=np.array(sample)
-		mask1=np.array(mask1)
-		mask2=np.array(mask2)
-		mask1[mask1>0]=255
-		mask2[mask2>0]=255
-		# print(m.group(3))
+		mask1 = self.loader(mask1_path)
+		mask2 = self.loader(mask2_path)
+		sample = np.array(sample)
+		mask1 = np.array(mask1)
+		mask2 = np.array(mask2)
+		mask1[mask1 > 0] = 1
+		mask2[mask2 > 0] = 1
+		print(m.group(3))
 		# if sample.shape != mask1.shape or sample.shape!=mask2.shape:
 		# 	print(m.group(3))
-		sample[...,1]=mask1[...,1]
-		sample[...,2]=mask2[...,2]
-		# plt.imshow(sample)
-		# plt.show()
-		sample=Image.fromarray(sample)
+		sample[..., 1] *= mask1[..., 1]
+		sample[..., 2] *= mask2[..., 2]
+		plt.imshow(sample)
+		plt.show()
+		sample = Image.fromarray(sample)
 
 		if self.transform is not None:
 			# data = {"image": np.array(sample)}
@@ -221,6 +243,8 @@ class MaskedFolder(DatasetFolder):
 		if self.with_path:
 			return sample, target, path
 		return sample, target
+
+
 class ValFolder(MyFolder):
 	def __init__(self, root, transform=None, target_transform=None, with_path=True, loader=default_loader):
 		self.with_path = with_path
@@ -232,8 +256,8 @@ class ValFolder(MyFolder):
 		sample = self.loader(path)
 		if self.transform is not None:
 			sample = self.transform(sample)
-			# data = {"image": np.array(sample)}
-			# sample = self.transform(sample)
+		# data = {"image": np.array(sample)}
+		# sample = self.transform(sample)
 		# sample = self.transform(**data)['image']
 		if self.target_transform is not None:
 			target = self.target_transform(target)
@@ -246,7 +270,8 @@ class MaskFolder(Dataset):
 	""" Echinococcosis dataset with mask
 	"""
 
-	def __init__(self, datalist_file='datafolder/c2_mask/train_list.txt',root_dir='/home/wen/PycharmProjects/Attention-Echino',
+	def __init__(self, datalist_file='datafolder/c2_mask/train_list.txt',
+				 root_dir='/home/wen/PycharmProjects/Attention-Echino',
 				 mask=True, transform=None, with_path=False):
 		"""
 
@@ -255,7 +280,7 @@ class MaskFolder(Dataset):
 		:param transform:
 		:param with_path:
 		"""
-		self.root_dir=root_dir
+		self.root_dir = root_dir
 		self.with_path = with_path
 		self.datalist_file = datalist_file
 		self.mask = mask
@@ -276,7 +301,7 @@ class MaskFolder(Dataset):
 			if self.transform is not None:
 				image, mask = self.transform(image, mask)
 			if self.with_path:
-				return image, self.lable_list[idx],image_path,mask
+				return image, self.lable_list[idx], image_path, mask
 			else:
 				return image, self.lable_list[idx], mask
 
@@ -321,7 +346,7 @@ class MaskFolder(Dataset):
 
 					labels = map(int, line[1:])
 
-			image = image[len(image.split('/')[0])+1:]
+			image = image[len(image.split('/')[0]) + 1:]
 			img_name_list.append(os.path.join(self.root_dir, image))
 			img_labels.append(labels)
 		return img_name_list, np.array(img_labels, dtype=np.float32)
@@ -339,6 +364,80 @@ class MaskFolder(Dataset):
 		for image in self.image_list:
 			m = datepad.match(image)
 			mask_list = os.path.join(m.group(1), mask_folder, m.group(3))
-			mask_list=mask_list[ :-len(mask_list.split('.')[1])]+'png'
+			mask_list = mask_list[:-len(mask_list.split('.')[1])] + 'png'
 			mask_lists.append(os.path.join(self.root_dir, mask_list))
 		return mask_lists
+
+
+class INAT(Dataset):
+	def __init__(self, root, ann_file, is_train=True):
+		print('load annotations from :' + os.path.basename(ann_file))
+		with open(ann_file) as data_file:
+			ann_data = json.load(data_file)
+		self.imgs = [ann['file_name'] for ann in ann_data['images']]
+		self.ids = [ann['id'] for ann in ann_data['images']]
+
+		if 'annotations' in ann_data.keys():
+			self.classes = [aa['category_id'] for aa in ann_data['annotations']]
+		else:
+			self.classes = [0] * len(self.imgs)
+		self.tax_levels = ['id', 'genus', 'family', 'order', 'class', 'phylum', 'kingdom']
+		self.taxonomy, self.classes_taxonomic = self.load_taxonomy(ann_data, self.tax_levels, self.classes)
+		print('\t ' + str(len(self.imgs)) + 'images')
+		print('\t ' + str(len(set(self.classes))) + 'classes')
+		self.root = root
+		self.is_train = is_train
+		self.loader = default_loader
+
+		self.im_size = [224, 224]
+		self.mu_data = [0.485, 0.456, 0.406]
+		self.std_data = [0.229, 0.224, 0.225]
+		self.brightness = 0.4
+		self.contrast = 0.4
+		self.saturation = 0.4
+		self.hue = 0.25
+		self.center_crop = transforms.CenterCrop((self.im_size[0], self.im_size[1]))
+		self.scale_aug = transforms.RandomResizedCrop(size=self.im_size[0])
+		self.flip_aug = transforms.RandomHorizontalFlip()
+		self.norm_aug = transforms.Normalize(mean=self.mu_data, std=self.std_data)
+		self.color_aug = transforms.ColorJitter(self.brightness, self.contrast, self.saturation, self.hue)
+		self.tensor_aug = transforms.ToTensor()
+
+	def __getitem__(self, index):
+		path = self.root + self.imgs[index]
+		im_id = self.ids[index]
+		img = self.loader(path)
+		species_id = self.classes[index]
+		tax_ids = self.classes_taxonomic[species_id]
+
+		if self.is_train:
+			img = self.scale_aug(img)
+			img = self.flip_aug(img)
+			img = self.color_aug(img)
+		else:
+			img = self.center_crop(img)
+		img = self.tensor_aug(img)
+		img = self.norm_aug(img)
+		return img, im_id, species_id, tax_ids
+
+	def __len__(self):
+		return len(self.imgs)
+
+	def load_taxonomy(self, ann_data, tax_levels, classes):
+		taxonomy = {}
+		if 'categories' in ann_data.keys():
+			num_classes = len(ann_data['categories'])
+			for tt in tax_levels:
+				tax_data = [aa[tt] for aa in ann_data['categories']]
+				_, tax_id = np.unique(tax_data, return_inverse=True)
+				taxonomy[tt] = dict(zip(range(num_classes), list(tax_id)))
+		else:
+			for tt in tax_levels:
+				taxonomy[tt] = dict(zip([0], [0]))
+		classes_taxonomic = {}
+		for cc in np.unique(classes):
+			tax_ids = [0] * len(tax_levels)
+			for ii, tt in enumerate(tax_levels):
+				tax_ids[ii] = taxonomy[tt][cc]
+			classes_taxonomic[cc] = tax_ids
+		return taxonomy, classes_taxonomic

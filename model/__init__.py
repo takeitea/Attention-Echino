@@ -13,4 +13,4 @@ from .resnet_atten import resnet50_atten,resnet18_atten
 from .drn import *
 from .masknet import Masknet18
 from .drn_mask import drn_c_26_mask
-from .nasnet_mobile import NASNetAMobile
+from .nasnet_mobile import nasnetamobile

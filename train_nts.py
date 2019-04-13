@@ -23,14 +23,14 @@ def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of resnet18")
 	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
 	arg.add_argument('--store_per_epoch', default=False)
-	arg.add_argument('--epochs', default=40)
+	arg.add_argument('--epochs', default=100)
 	arg.add_argument('--num_classes', default=9, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
 	arg.add_argument('--img_size', help='the input size', default=224)
 	arg.add_argument('--dir', help='the dataset root', default='datafolder/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print information')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='NTS')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='NTS_res50_c9')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
@@ -56,7 +56,7 @@ def main():
 	# model=loadpartweight(model)
 	model = Attention_Net(topN=6,num_classes=args.num_classes).cuda()
 
-	LR = Learning_rate_generater('step', [20, 30], args.epochs)
+	LR = Learning_rate_generater('step', [30, 50], args.epochs)
 	params_list = [{'params': model.pretrained_model.parameters(), 'lr': args.lr,
 					'weight_decay': args.weight_decay}, ]
 	params_list.append({'params': model.proposal_net.parameters(), 'lr': args.lr,
@@ -74,7 +74,7 @@ def main():
 	# vizNet(model, args.modeldir)
 	model = torch.nn.DataParallel(model, range(args.gpu))
 	trainloader, valloader = get_data(args)
-
+	multiloss=MultiLoss().cuda()
 	critertion = torch.nn.CrossEntropyLoss().cuda()
 	if args.evaluate:
 		evaluate(valloader, model, critertion,is_last=True,args=args,epoch=args.epochs)
@@ -85,8 +85,8 @@ def main():
 	for epoch in range(args.epochs):
 		is_last=epoch==args.epochs-1
 		adjust_learning_rate(opt, LR.lr_factor, epoch)
-		trainObj, top1, top2 = train(trainloader, model, critertion, opt, epoch, multiloss=None)
-		valObj, prec1, prec2 = evaluate(valloader, model,  critertion,epoch,is_last,args)
+		trainObj, top1, top2 = train(trainloader, model, critertion, opt, epoch, multiloss)
+		valObj, prec1, prec2 = evaluate(valloader, model,  critertion,epoch,is_last,args,multiloss)
 		stats._update(trainObj, top1, top2, valObj, prec1, prec2)
 		filename = []
 		if args.store_per_epoch:
@@ -112,6 +112,7 @@ def train(trainloader, model, criterion, optimizer, epoch, multiloss):
 	model.train()
 	end = time.time()
 	aloss=Auxiliary_Loss()
+
 	for i, (input, target) in enumerate(trainloader):
 		data_time.update(time.time() - end)
 		optimizer.zero_grad()
@@ -147,7 +148,7 @@ def train(trainloader, model, criterion, optimizer, epoch, multiloss):
 	return losses.avg, top1.avg, top2.avg
 
 
-def evaluate(valloader, model, criterion,epoch,is_last,args):
+def evaluate(valloader, model, criterion,epoch,is_last,args,multiloss):
 	batch_time = AvgMeter()
 	losses = AvgMeter()
 	top1 = AvgMeter()
@@ -159,8 +160,8 @@ def evaluate(valloader, model, criterion,epoch,is_last,args):
 
 			input, target = input.cuda(), target.cuda()
 			raw_logits, all_logits, _, _, _,  top_n_ccds = model(input)
-			if epoch > args.epochs-1:
-				plot_draw_box(input, top_n_ccds)
+			if epoch >args.epochs-5:
+				plot_draw_box(input, top_n_ccds,path)
 			loss=criterion(all_logits,target)
 
 			# loss = multiloss(all_logits, target)
@@ -242,7 +243,7 @@ def adjust_learning_rate(optimizer, lr_factor, epoch):
 		params_group['lr'] = lr_factor[epoch] * args.lr
 
 
-def plot_draw_box(input,top_n_cdds):
+def plot_draw_box(input,top_n_cdds,path):
 	mean = np.expand_dims(np.expand_dims([0.275, 0.278, 0.284], axis=1), axis=1)
 	std = np.expand_dims(np.expand_dims([0.170, 0.171, 0.173], axis=1), axis=1)
 	input = input.cpu().numpy()
@@ -256,6 +257,7 @@ def plot_draw_box(input,top_n_cdds):
 			image=cv2.rectangle(image,(x0,y0),(x1,y1),color=(np.random.randint(128,255),np.random.randint(128,255)
 								,np.random.randint(128,255)),thickness=1)
 		cv2.imshow('image', image)
+		cv2.imwrite('prop/'+ path[i].split('/')[-1],image)
 		cv2.waitKey(200)
 
 

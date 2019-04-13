@@ -22,14 +22,14 @@ def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of resnet18")
 	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
 	arg.add_argument('--store_per_epoch', default=False)
-	arg.add_argument('--epochs', default=35)
+	arg.add_argument('--epochs', default=20)
 	arg.add_argument('--num_classes', default=2, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
 	arg.add_argument('--img_size', help='the input size', default=224)
-	arg.add_argument('--dir', help='the dataset root', default='./datafolder/c2_mask/ROI/image/')
+	arg.add_argument('--dir', help='the dataset root', default='./datafolder/c2_mask/ROI/fake_image/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='drc_')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='res_overlap')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
@@ -50,9 +50,8 @@ def main():
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
 	model = resnet18(pretrained=True).cuda()
-
 	model.fc=nn.Linear(512,2).cuda()
-	LR = Learning_rate_generater('step', [14, 20], args.epochs)
+	LR = Learning_rate_generater('step', [8, 15], args.epochs)
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-4)
 	print(args)
 	# plot network
@@ -135,9 +134,14 @@ def evaluate(valloader, model, criterion,is_last,args):
 	top1 = AvgMeter()
 	top2 = AvgMeter()
 	model.eval()
+	data = {}
+	data['path'] = []
+	data['feature'] = []
+	data['label'] = []
 	with torch.no_grad():
 		end = time.time()
 		for i, (input, target, path) in enumerate(valloader):
+
 
 			input, target = input.cuda(), target.cuda()
 			output1,_,_ = model(input)
@@ -148,7 +152,11 @@ def evaluate(valloader, model, criterion,is_last,args):
 			top1.update(prec1[0], input.size(0))
 			top2.update(prec2[0], input.size(0))
 			batch_time.update(time.time() - end)
-
+			if is_last:
+				target=target.cpu()
+				data['path'].extend(path)
+				data['feature'].extend(output1.cpu().numpy().tolist())
+				data['label'].extend([int(i) for i in target.numpy()])
 			if i % args.print_freq == 0:
 				print('Test: [{0}/{1}]\t'
 					  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'

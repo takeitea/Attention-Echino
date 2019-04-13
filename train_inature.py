@@ -1,44 +1,39 @@
 import argparse
-import torch
-import time
-import numpy as np
-import torch.optim as optim
+import math
 import os
-import scipy.io as sio
-from model import drn_c_26_mask
-from utils import AvgMeter, accuracy, plot_curve, restore
-from utils import vizNet, Stats, save_checkpoint, loadpartweight
-from data import get_with_mask
 import shutil
-import torch.nn.functional  as F
-import cv2
-os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
-best_prec1 = 0
+import time
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy.io as sio
+import torch
+import torch.optim as optim
+from data import get_nature
+from loss import Auxiliary_Loss
+from model import nasnetamobile
+from utils import AvgMeter, accuracy, plot_curve, restore
+from utils import Stats, save_checkpoint
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 
 def arg_pare():
-	arg = argparse.ArgumentParser(description=" args of resnet18")
+	arg = argparse.ArgumentParser(description=" args of train inature")
 	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
 	arg.add_argument('--store_per_epoch', default=False)
-	arg.add_argument('--epochs', default=55)
-	arg.add_argument('--num_classes', default=2, type=int)
-	arg.add_argument('--lr', help='learn rate', default=0.001)
-	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
+	arg.add_argument('--epochs', default=40)
+	arg.add_argument('--num_classes', default=1010, type=int)
+	arg.add_argument('--lr', help='learn rate', default=0.0045)
 	arg.add_argument('--img_size', help='the input size', default=224)
-	arg.add_argument('--dir', help='the dataset root', default='./datafolder/ROI/image/')
+	arg.add_argument('--dir', help='the dataset root', default='./datafolder/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='drn_mask')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='inature')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
-	arg.add_argument('--lr_method', help='method of learn rate')
+	arg.add_argument('--lr_method',default='step',help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
-	arg.add_argument('--world_size', default=1, type=int, help='number of distributed processes')
-	arg.add_argument('--dist_url', default='tcp://127.0.0.01:123', type=str, help='url used to set up')
-	arg.add_argument('--dist_backend', default='gloo', type=str, help='distributed backend')
 	arg.add_argument('--evaluate', default=False, help='whether to evaluate only')
-	arg.add_argument('--mean5', default=35, help="the first epoch to calculate the 5-epoch means")
+	arg.add_argument('--resume', default='./result/drc_aloss/model_best.pth.tar', help="whether to load checkpoint")
 	arg.add_argument('--start_epoch', default=0)
-	# arg.add_argument('--resume', default='./ResNet18_mask/checkpoint.pth.tar', help="whether to load checkpoint")
-	arg.add_argument('--resume', default=False, help="whether to load checkpoint")
+	arg.add_argument('--op_file_name',default='./input/kaggle_submission.csv')
 	return arg.parse_args()
 
 
@@ -46,37 +41,38 @@ args = arg_pare()
 
 
 def main():
+	best_prec1 = 0
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
-	model =drn_c_26_mask(num_classes=1).cuda()
-	LR = Learning_rate_generater('step', [30, 40], args.epochs)
+	model = nasnetamobile(num_classes=args.num_classes,pretrained=False).cuda()
+	model.cuda()
+	LR = Learning_rate_generater('step', [17,25], args.epochs)
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-4)
 	print(args)
-	# plot network
-	# vizNet(model, args.modeldir)
-	if args.resume:
-		restore(args, model, opt, istrain=not args.evaluate)
-	model = torch.nn.DataParallel(model, range(args.gpu))
-	trainloader, valloader =get_with_mask(args)
-	critertion = torch.nn.BCELoss().cuda()
 	if args.evaluate:
-		evaluate(valloader, model, critertion)
+		restore(args, model, opt,  istrain=not args.evaluate)
+	if not args.evaluate:
+		model = torch.nn.DataParallel(model, range(args.gpu))
+	trainloader, valloader ,testloader= get_nature()
+	critertion = torch.nn.CrossEntropyLoss()
+	if args.evaluate:
+		evaluate(valloader, model, critertion,args,True)
 		return
 	if os.path.exists(args.modeldir):
 		shutil.rmtree(args.modeldir)
-
 	os.mkdir(args.modeldir)
-
 	stats = Stats(args.modeldir, start_epoch=args.start_epoch, total_epoch=args.epochs)
 	for epoch in range(args.epochs):
-
+		is_best=False
 		is_last=epoch==args.epochs-1
-
-		adjust_learning_rate(opt, LR.lr_factor, epoch)
+		# adjust_learning_rate(opt, LR.lr_factor, epoch)
+		cos_anneal_lr(opt,LR.lr,epoch)
 		trainObj, top1, top2 = train(trainloader, model, critertion, opt, epoch)
-		valObj, prec1, prec2 = evaluate(valloader, model, critertion,is_last,args,epoch)
-		# stats._update(trainObj, top1, top2, valObj, prec1, prec2)
-
+		valObj, prec1, prec2 = evaluate(valloader, model, critertion,args)
+		stats._update(trainObj, top1, top2, valObj, prec1, prec2)
+		if best_prec1<prec1:
+			best_prec1=prec1
+			is_best=True
 		filename = []
 		if args.store_per_epoch:
 			filename.append(os.path.join(args.modeldir, 'net-epoch-%s.pth.tar' % (epoch + 1)))
@@ -84,10 +80,10 @@ def main():
 			filename.append(os.path.join(args.modeldir, 'checkpoint.pth.tar'))
 		filename.append(os.path.join(args.modeldir, 'model_best.pth.tar'))
 		save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(), 'best_prec1': best_prec1,
-						 'optimizer': opt.state_dict()}, (prec1 > best_prec1), filename)
+						 'optimizer': opt.state_dict()}, is_best, filename)
 		plot_curve(stats, args.modeldir, True)
-		sio.savemat(os.path.join(args.modeldir, 'stats.mat'), {'data': stats})
-
+	test(testloader,model,args)
+	sio.savemat(os.path.join(args.modeldir, 'stats.mat'), {'data': stats})
 	stats.get_last5()
 
 
@@ -99,17 +95,18 @@ def train(trainloader, model, criterion, optimizer, epoch):
 	top2 = AvgMeter()
 	model.train()
 	end = time.time()
-	for i, (input, target,true_mask) in enumerate(trainloader):
+	aloss=Auxiliary_Loss()
+	for i, (input,im_id, target,tax_id) in enumerate(trainloader):
 		data_time.update(time.time() - end)
-		input, target, true_mask = input.cuda(), target.cuda().long(),true_mask.cuda()
-		mask= model(input)
-		# prec1, prec2 = accuracy(out1, target.long(), topk=(1,2))
-		# loss =F.binary_cross_entropy_with_logits(mask,true_mask.unsqueeze(1))
-		# loss=F.binary_cross_entropy(mask,true_mask.unsqueeze(1))
-		loss=criterion(mask,true_mask.unsqueeze(1))
+		input, target = input.cuda(), target.cuda()
+		out1= model(input)
+
+		loss = criterion(out1, target)
+		prec1, prec2 = accuracy(out1, target,topk=(1, 2))
 		losses.update(loss.item(), input.size(0))
-		# top1.update(prec1[0], input.size(0))
-		# top2.update(prec2[0], input.size(0))
+		top1.update(prec1[0], input.size(0))
+		top2.update(prec2[0], input.size(0))
+
 		optimizer.zero_grad()
 		loss.backward()
 		optimizer.step()
@@ -125,9 +122,7 @@ def train(trainloader, model, criterion, optimizer, epoch):
 				epoch, i, len(trainloader), batch_time=batch_time,
 				data_time=data_time, loss=losses, top1=top1, top2=top2))
 	return losses.avg, top1.avg, top2.avg
-
-
-def evaluate(valloader, model, criterion,is_last,args,epoch):
+def evaluate(valloader, model, criterion,args):
 	batch_time = AvgMeter()
 	losses = AvgMeter()
 	top1 = AvgMeter()
@@ -135,16 +130,16 @@ def evaluate(valloader, model, criterion,is_last,args,epoch):
 	model.eval()
 	with torch.no_grad():
 		end = time.time()
-		for i, (input, target,path, true_mask) in enumerate(valloader):
-			input, target,true_mask = input.cuda(), target.cuda().long(),true_mask.cuda()
-			mask = model(input)
-			loss=criterion(mask,true_mask.unsqueeze(1))
-			if epoch%5==0:
-				plot_mask(input,mask)
-			path=path if is_last else None
+		for i, (input,im_id, target,tax_ids) in enumerate(valloader):
+			input = input.cuda()
+			target=target.cuda()
+			output1= model(input)
+			loss = criterion(output1, target)
+			prec1, prec2 = accuracy(output1, target, topk=(1, 2))
 			losses.update(loss.item(), input.size(0))
+			top1.update(prec1[0], input.size(0))
+			top2.update(prec2[0], input.size(0))
 			batch_time.update(time.time() - end)
-
 			if i % args.print_freq == 0:
 				print('Test: [{0}/{1}]\t'
 					  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
@@ -153,12 +148,28 @@ def evaluate(valloader, model, criterion,is_last,args,epoch):
 					  'Prec@2 {top1.val:.3f} ({top2.avg:.3f})'.format(
 					i, len(valloader), batch_time=batch_time, loss=losses,
 					top1=top1, top2=top2))
-
 		print(' * Prec@1 {top1.avg:.3f} Prec@2 {top2.avg:.3f}'.format(top1=top1, top2=top2))
-
 		return losses.avg, top1.avg, top2.avg
-
-
+def test(testloader, model,args):
+	batch_time = AvgMeter()
+	model.eval()
+	if os.path.exists(args.op_file_name):
+		os.remove(args.op_file_name)
+	with open(args.op_file_name,'w')as L:
+		L.write("id,predicted\n")
+	with torch.no_grad():
+		end = time.time()
+		for i, (input,im_id, target,tax_ids) in enumerate(testloader):
+			input = input.cuda()
+			output1= model(input)
+			np_scores, pred_labels = torch.topk(output1, k=2, dim=1)
+			pred_labels=pred_labels.cpu().data.numpy()
+			save_preds(im_id,np_pred=pred_labels,filename=args.op_file_name)
+			batch_time.update(time.time() - end)
+			if i % args.print_freq == 0:
+				print('Test: [{0}/{1}]\t'
+					  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'.format(
+					i, len(testloader), batch_time=batch_time))
 class Learning_rate_generater(object):
 	"""
 	Generate a list of learning rate
@@ -171,6 +182,8 @@ class Learning_rate_generater(object):
 			lr_factor, lr = self.log(params, total_epoch)
 		elif method == 'exp':
 			lr_factor, lr = self.exp(params, total_epoch)
+		elif method=='cos':
+			lr_factor,lr=self.cos(params,total_epoch)
 		else:
 			raise KeyError('unknown method {}'.format(method))
 
@@ -202,6 +215,29 @@ class Learning_rate_generater(object):
 			args.lr = lr[0]
 		return lr_factor, lr
 
+	def cos(self,min, total_epoch):
+		lr_factor=[]
+		lr=[]
+		lr.append(args.lr)
+		for epoch in range(total_epoch-1):
+			cos_decay=0.5*(1+math.cos((epoch+1) *math.pi/total_epoch))
+			decayed=(1-min)*cos_decay+min
+			lr_factor.append(decayed)
+			lr.append(args.lr*decayed)
+		return lr_factor,lr
+	def plot_lr(self):
+		plt.figure(figsize=(8,8))
+		plt.plot(np.arange(len(self.lr)),self.lr,color='blue',linewidth=2)
+		plt.xlabel("epoch")
+		plt.ylabel("lr")
+		plt.title("lr cos anneal")
+		plt.show()
+
+
+def save_preds(im_ids,np_pred,filename):
+	with open(filename,'a') as L:
+		for ii in range(len(im_ids)):
+			L.write(str(im_ids[ii])+','+' '.join(str(x) for x in np_pred[ii,:])+'\n')
 
 def adjust_learning_rate(optimizer, lr_factor, epoch):
 	"""
@@ -214,20 +250,17 @@ def adjust_learning_rate(optimizer, lr_factor, epoch):
 	for params_group in optimizer.param_groups:
 		params_group['lr'] = lr_factor[epoch] * args.lr
 
-def plot_mask(input,masks):
-	mean = np.expand_dims(np.expand_dims([0.275, 0.278, 0.284], axis=1), axis=1)
-	std = np.expand_dims(np.expand_dims([0.170, 0.171, 0.173], axis=1), axis=1)
-	input = input.cpu().numpy()
-	for i in range(input.shape[0]):
-		image = np.moveaxis((input[i] * std + mean), 0, -1) * 255
-		image=image.astype(np.uint8).copy()
-		mask=masks[i]
-		mask=mask.cpu().numpy()*255
-		mask=np.moveaxis(mask,0,-1).astype(np.uint8())
-		mask=cv2.resize(mask,(224,224))
-		mask= cv2.cvtColor(mask,cv2.COLOR_GRAY2BGR)
-		image= cv2.addWeighted(image,1.6,mask,1.0,20)
-		cv2.imshow('image', image)
-		cv2.waitKey(200)
+
+def cos_anneal_lr(optimizer,lr,epoch):
+	"""
+
+	:param optimizer:
+	:param lr:
+	:param epoch:
+	:return:
+	"""
+	for params_group in optimizer.param_groups:
+		params_group['lr']=lr[epoch]
+
 if __name__ == '__main__':
 	main()

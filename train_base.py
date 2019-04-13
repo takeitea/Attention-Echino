@@ -12,13 +12,13 @@ import torch
 import torch.optim as optim
 
 from data import get_data
-from loss import Auxiliary_Loss
-from model import drn_c_26
+from loss import Auxiliary_Loss,ComEnLoss
+from model import drn_c_26,resnet18
 from utils import AvgMeter, accuracy, plot_curve, restore
 from utils import SAVE_ATTEN
 from utils import Stats, save_checkpoint
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3,4,5,6,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
 
 
 
@@ -26,19 +26,19 @@ def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of base")
 	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
 	arg.add_argument('--store_per_epoch', default=False)
-	arg.add_argument('--epochs', default=400)
+	arg.add_argument('--epochs', default=40)
 	arg.add_argument('--num_classes', default=9, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
 	arg.add_argument('--img_size', help='the input size', default=224)
 	arg.add_argument('--dir', help='the dataset root', default='./datafolder/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='drc_cub')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='drn_4_')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method',default='step',help='method of learn rate')
-	arg.add_argument('--gpu', default=5, type=str)
+	arg.add_argument('--gpu', default=4, type=str)
 	arg.add_argument('--evaluate', default=True, help='whether to evaluate only')
-	arg.add_argument('--resume', default='drc_3/model_best.pth.tar', help="whether to load checkpoint")
+	arg.add_argument('--resume', default='./result/drc_aloss/model_best.pth.tar', help="whether to load checkpoint")
 	arg.add_argument('--start_epoch', default=0)
 	return arg.parse_args()
 
@@ -51,10 +51,10 @@ def main():
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
 	model = drn_c_26(pretrained=True).cuda()
-	# model.fc=nn.Linear(512,9).cuda()
+	model.fc=torch.nn.Linear(512,9).cuda()
 
 	model.cuda()
-	LR = Learning_rate_generater('step', [200,375], args.epochs)
+	LR = Learning_rate_generater('step', [17,25], args.epochs)
 	# LR.plot_lr()
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-4)
 	print(args)
@@ -64,6 +64,8 @@ def main():
 	if not args.evaluate:
 		model = torch.nn.DataParallel(model, range(args.gpu))
 	trainloader, valloader = get_data(args)
+	# com_loss=ComEnLoss()
+	# com_opti=optim.SGD(model.parameters(),lr=args.lr,momentum=0.9,weight_decay=1e-4)
 	critertion = torch.nn.CrossEntropyLoss()
 	if args.evaluate:
 		evaluate(valloader, model, critertion,args,True)
@@ -111,9 +113,9 @@ def train(trainloader, model, criterion, optimizer, epoch):
 	for i, (input, target) in enumerate(trainloader):
 		data_time.update(time.time() - end)
 		input, target = input.cuda(), target.cuda()
-		out1,out2= model(input)
+		out1= model(input)
 
-		loss = criterion(out1, target)+criterion(out2,target)
+		loss = criterion(out1, target)
 		prec1, prec2 = accuracy(out1, target,topk=(1, 2))
 		losses.update(loss.item(), input.size(0))
 		top1.update(prec1[0], input.size(0))
@@ -122,6 +124,12 @@ def train(trainloader, model, criterion, optimizer, epoch):
 		optimizer.zero_grad()
 		loss.backward()
 		optimizer.step()
+		out1=model(input)
+
+		# loss=com_loss(out1,target)
+		# com_opti.zero_grad()
+		# loss.backward()
+		# com_opti.step()
 		batch_time.update(time.time() - end)
 		end = time.time()
 		if i % args.print_freq == 0:
@@ -151,25 +159,27 @@ def evaluate(valloader, model, criterion,args,is_last):
 		end = time.time()
 		for i, (input, target,path) in enumerate(valloader):
 			input = input.cuda()
-			output1,output2= model(input)
+			target=target.cuda()
+			output1= model(input)
 
 
-			# loss = criterion(output1, target)+criterion(output2,target)
-			# prec1, prec2 = accuracy(output1, target, topk=(1, 2))
+			loss = criterion(output1, target)
+			prec1, prec2 = accuracy(output1, target, topk=(1, 2))
 			if is_last:
 				# np_last_featmaps=model.get_localization_maps().cpu().data.numpy()
-				# np_scores, pred_labels = torch.topk(output1, k=2, dim=1)
-				# pred_labels=pred_labels.cpu().data.numpy()
-				# np_scores=np_scores.cpu().data.numpy()
+				np_scores, pred_labels = torch.topk(output1, k=2, dim=1)
+				pred_labels=pred_labels.cpu().data.numpy()
+				np_scores=np_scores.cpu().data.numpy()
+				target=target.cpu()
 				# save_atten.get_masked_img(path,np_last_featmaps,pred_labels,target.cpu().numpy())
 				data['path'].extend(path)
 				data['feature'].extend(output1.cpu().numpy().tolist())
 				data['label'].extend([int(i) for i in target.numpy()])
 				# model.saved_erased_img(img_path=path)
-				# save_txt(np_scores,pred_labels,path)
-			# losses.update(loss.item(), input.size(0))
-			# top1.update(prec1[0], input.size(0))
-			# top2.update(prec2[0], input.size(0))
+				save_txt(np_scores,pred_labels,path)
+			losses.update(loss.item(), input.size(0))
+			top1.update(prec1[0], input.size(0))
+			top2.update(prec2[0], input.size(0))
 			batch_time.update(time.time() - end)
 
 			if i % args.print_freq == 0:

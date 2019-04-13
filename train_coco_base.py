@@ -1,44 +1,45 @@
 import argparse
-import torch
-import time
-import numpy as np
-import torch.optim as optim
+import json
+import math
 import os
-import scipy.io as sio
-from model import drn_c_26_mask
-from utils import AvgMeter, accuracy, plot_curve, restore
-from utils import vizNet, Stats, save_checkpoint, loadpartweight
-from data import get_with_mask
 import shutil
-import torch.nn.functional  as F
-import cv2
+import time
+
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy.io as sio
+import torch
+import torch.optim as optim
+
+from data import get_data
+from loss import Auxiliary_Loss,COCOloss
+from model import drn_c_26,resnet18
+from utils import AvgMeter, accuracy, plot_curve, restore
+from utils import SAVE_ATTEN
+from utils import Stats, save_checkpoint
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
-best_prec1 = 0
+
 
 
 def arg_pare():
-	arg = argparse.ArgumentParser(description=" args of resnet18")
+	arg = argparse.ArgumentParser(description=" args of base")
 	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
 	arg.add_argument('--store_per_epoch', default=False)
-	arg.add_argument('--epochs', default=55)
-	arg.add_argument('--num_classes', default=2, type=int)
+	arg.add_argument('--epochs', default=30)
+	arg.add_argument('--num_classes', default=9, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
 	arg.add_argument('--img_size', help='the input size', default=224)
-	arg.add_argument('--dir', help='the dataset root', default='./datafolder/ROI/image/')
+	arg.add_argument('--dir', help='the dataset root', default='./datafolder/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='drn_mask')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='drn_coco')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
-	arg.add_argument('--lr_method', help='method of learn rate')
+	arg.add_argument('--lr_method',default='step',help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
-	arg.add_argument('--world_size', default=1, type=int, help='number of distributed processes')
-	arg.add_argument('--dist_url', default='tcp://127.0.0.01:123', type=str, help='url used to set up')
-	arg.add_argument('--dist_backend', default='gloo', type=str, help='distributed backend')
 	arg.add_argument('--evaluate', default=False, help='whether to evaluate only')
-	arg.add_argument('--mean5', default=35, help="the first epoch to calculate the 5-epoch means")
+	arg.add_argument('--resume', default='./drn_coco/model_best.pth.tar', help="whether to load checkpoint")
 	arg.add_argument('--start_epoch', default=0)
-	# arg.add_argument('--resume', default='./ResNet18_mask/checkpoint.pth.tar', help="whether to load checkpoint")
-	arg.add_argument('--resume', default=False, help="whether to load checkpoint")
 	return arg.parse_args()
 
 
@@ -46,37 +47,48 @@ args = arg_pare()
 
 
 def main():
+	best_prec1 = 0
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
-	model =drn_c_26_mask(num_classes=1).cuda()
-	LR = Learning_rate_generater('step', [30, 40], args.epochs)
+	model = drn_c_26(pretrained=True).cuda()
+	model.fc=torch.nn.Linear(512,128).cuda()
+
+	model.cuda()
+	LR = Learning_rate_generater('step', [20,25], args.epochs)
+	# LR.plot_lr()
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-4)
 	print(args)
-	# plot network
 	# vizNet(model, args.modeldir)
-	if args.resume:
-		restore(args, model, opt, istrain=not args.evaluate)
-	model = torch.nn.DataParallel(model, range(args.gpu))
-	trainloader, valloader =get_with_mask(args)
-	critertion = torch.nn.BCELoss().cuda()
 	if args.evaluate:
-		evaluate(valloader, model, critertion)
+		restore(args, model, opt,  istrain=not args.evaluate)
+	if not args.evaluate:
+		model = torch.nn.DataParallel(model, range(args.gpu))
+	trainloader, valloader = get_data(args)
+	# com_loss=ComEnLoss()
+	# com_opti=optim.SGD(model.parameters(),lr=args.lr,momentum=0.9,weight_decay=1e-4)
+	critertion = torch.nn.CrossEntropyLoss()
+	coco_loss=COCOloss(9,128).cuda()
+	coco_optim=optim.SGD(coco_loss.parameters(),lr=0.01,momentum=0.9)
+	if args.evaluate:
+		evaluate(valloader, model, critertion,args,True,coco_loss=coco_loss)
 		return
 	if os.path.exists(args.modeldir):
 		shutil.rmtree(args.modeldir)
-
 	os.mkdir(args.modeldir)
-
 	stats = Stats(args.modeldir, start_epoch=args.start_epoch, total_epoch=args.epochs)
 	for epoch in range(args.epochs):
-
+		is_best=False
 		is_last=epoch==args.epochs-1
+		# adjust_learning_rate(opt, LR.lr_factor, epoch)
+		cos_anneal_lr(opt,LR.lr,epoch)
+		trainObj, top1, top2 = train(trainloader, model, critertion, opt, epoch,coco_loss,coco_optim)
+		valObj, prec1, prec2 = evaluate(valloader, model, critertion,args,is_last,coco_loss)
 
-		adjust_learning_rate(opt, LR.lr_factor, epoch)
-		trainObj, top1, top2 = train(trainloader, model, critertion, opt, epoch)
-		valObj, prec1, prec2 = evaluate(valloader, model, critertion,is_last,args,epoch)
-		# stats._update(trainObj, top1, top2, valObj, prec1, prec2)
-
+		stats._update(trainObj, top1, top2, valObj, prec1, prec2)
+		if best_prec1<prec1:
+			best_prec1=prec1
+			is_best=True
+			# shutil.copyfile(args.modeldir+'/result.txt',args.modeldir+'/best.txt')
 		filename = []
 		if args.store_per_epoch:
 			filename.append(os.path.join(args.modeldir, 'net-epoch-%s.pth.tar' % (epoch + 1)))
@@ -84,14 +96,14 @@ def main():
 			filename.append(os.path.join(args.modeldir, 'checkpoint.pth.tar'))
 		filename.append(os.path.join(args.modeldir, 'model_best.pth.tar'))
 		save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(), 'best_prec1': best_prec1,
-						 'optimizer': opt.state_dict()}, (prec1 > best_prec1), filename)
+						 'optimizer': opt.state_dict()}, is_best, filename)
 		plot_curve(stats, args.modeldir, True)
-		sio.savemat(os.path.join(args.modeldir, 'stats.mat'), {'data': stats})
 
+	sio.savemat(os.path.join(args.modeldir, 'stats.mat'), {'data': stats})
 	stats.get_last5()
 
 
-def train(trainloader, model, criterion, optimizer, epoch):
+def train(trainloader, model, criterion, optimizer, epoch,coco_loss,coco_optim):
 	batch_time = AvgMeter()
 	data_time = AvgMeter()
 	losses = AvgMeter()
@@ -99,20 +111,22 @@ def train(trainloader, model, criterion, optimizer, epoch):
 	top2 = AvgMeter()
 	model.train()
 	end = time.time()
-	for i, (input, target,true_mask) in enumerate(trainloader):
+	aloss=Auxiliary_Loss()
+	for i, (input, target) in enumerate(trainloader):
 		data_time.update(time.time() - end)
-		input, target, true_mask = input.cuda(), target.cuda().long(),true_mask.cuda()
-		mask= model(input)
-		# prec1, prec2 = accuracy(out1, target.long(), topk=(1,2))
-		# loss =F.binary_cross_entropy_with_logits(mask,true_mask.unsqueeze(1))
-		# loss=F.binary_cross_entropy(mask,true_mask.unsqueeze(1))
-		loss=criterion(mask,true_mask.unsqueeze(1))
-		losses.update(loss.item(), input.size(0))
-		# top1.update(prec1[0], input.size(0))
-		# top2.update(prec2[0], input.size(0))
+		input, target = input.cuda(), target.cuda()
+		feat, _ = model(input)
+		logits = coco_loss(feat)
+		loss = criterion(logits, target)
 		optimizer.zero_grad()
+		coco_optim.zero_grad()
 		loss.backward()
 		optimizer.step()
+		coco_optim.step()
+		prec1, prec2 = accuracy(logits, target,topk=(1, 2))
+		losses.update(loss.item(), input.size(0))
+		top1.update(prec1[0], input.size(0))
+		top2.update(prec2[0], input.size(0))
 		batch_time.update(time.time() - end)
 		end = time.time()
 		if i % args.print_freq == 0:
@@ -127,22 +141,42 @@ def train(trainloader, model, criterion, optimizer, epoch):
 	return losses.avg, top1.avg, top2.avg
 
 
-def evaluate(valloader, model, criterion,is_last,args,epoch):
+def evaluate(valloader, model, criterion,args,is_last,coco_loss):
 	batch_time = AvgMeter()
 	losses = AvgMeter()
 	top1 = AvgMeter()
 	top2 = AvgMeter()
 	model.eval()
+	data = {}
+	data['path'] = []
+	data['feature'] = []
+	data['label'] = []
+	save_atten=SAVE_ATTEN('./save_c9',dataset='c9')
 	with torch.no_grad():
 		end = time.time()
-		for i, (input, target,path, true_mask) in enumerate(valloader):
-			input, target,true_mask = input.cuda(), target.cuda().long(),true_mask.cuda()
-			mask = model(input)
-			loss=criterion(mask,true_mask.unsqueeze(1))
-			if epoch%5==0:
-				plot_mask(input,mask)
-			path=path if is_last else None
+		for i, (input, target,path) in enumerate(valloader):
+			input = input.cuda()
+			target=target.cuda()
+			feat,_= model(input)
+
+			logits=coco_loss(feat)
+			loss = criterion(logits, target)
+			prec1, prec2 = accuracy(logits, target, topk=(1, 2))
+			if is_last:
+				# np_last_featmaps=model.get_localization_maps().cpu().data.numpy()
+				np_scores, pred_labels = torch.topk(logits, k=2, dim=1)
+				pred_labels=pred_labels.cpu().data.numpy()
+				np_scores=np_scores.cpu().data.numpy()
+				# save_atten.get_masked_img(path,np_last_featmaps,pred_labels,target.cpu().numpy())
+				data['path'].extend(path)
+				target=target.cpu()
+				data['feature'].extend(logits.cpu().numpy().tolist())
+				data['label'].extend([int(i) for i in target.numpy()])
+				model.saved_erased_img(img_path=path)
+				save_txt(np_scores,pred_labels,path)
 			losses.update(loss.item(), input.size(0))
+			top1.update(prec1[0], input.size(0))
+			top2.update(prec2[0], input.size(0))
 			batch_time.update(time.time() - end)
 
 			if i % args.print_freq == 0:
@@ -153,10 +187,11 @@ def evaluate(valloader, model, criterion,is_last,args,epoch):
 					  'Prec@2 {top1.val:.3f} ({top2.avg:.3f})'.format(
 					i, len(valloader), batch_time=batch_time, loss=losses,
 					top1=top1, top2=top2))
-
 		print(' * Prec@1 {top1.avg:.3f} Prec@2 {top2.avg:.3f}'.format(top1=top1, top2=top2))
-
+		with open('data.json', 'w') as out:
+			json.dump(data, out)
 		return losses.avg, top1.avg, top2.avg
+
 
 
 class Learning_rate_generater(object):
@@ -171,6 +206,8 @@ class Learning_rate_generater(object):
 			lr_factor, lr = self.log(params, total_epoch)
 		elif method == 'exp':
 			lr_factor, lr = self.exp(params, total_epoch)
+		elif method=='cos':
+			lr_factor,lr=self.cos(params,total_epoch)
 		else:
 			raise KeyError('unknown method {}'.format(method))
 
@@ -202,6 +239,28 @@ class Learning_rate_generater(object):
 			args.lr = lr[0]
 		return lr_factor, lr
 
+	def cos(self,min, total_epoch):
+		lr_factor=[]
+		lr=[]
+		lr.append(args.lr)
+		for epoch in range(total_epoch-1):
+			cos_decay=0.5*(1+math.cos((epoch+1) *math.pi/total_epoch))
+			decayed=(1-min)*cos_decay+min
+			lr_factor.append(decayed)
+			lr.append(args.lr*decayed)
+		return lr_factor,lr
+	def plot_lr(self):
+		plt.figure(figsize=(8,8))
+		plt.plot(np.arange(len(self.lr)),self.lr,color='blue',linewidth=2)
+		plt.xlabel("epoch")
+		plt.ylabel("lr")
+		plt.title("lr cos anneal")
+		plt.show()
+
+def save_txt(np_score,np_pred,path):
+	with open('result.txt','a') as L:
+		L.write(str(path)+str(np_score[0])+ str(np_score[1])+str(np_pred[0])+str(np_pred[1])+'\n')
+
 
 def adjust_learning_rate(optimizer, lr_factor, epoch):
 	"""
@@ -213,21 +272,16 @@ def adjust_learning_rate(optimizer, lr_factor, epoch):
 	print('the lr is set to {0:.5f}'.format(lr_factor[epoch] * args.lr))
 	for params_group in optimizer.param_groups:
 		params_group['lr'] = lr_factor[epoch] * args.lr
+def cos_anneal_lr(optimizer,lr,epoch):
+	"""
 
-def plot_mask(input,masks):
-	mean = np.expand_dims(np.expand_dims([0.275, 0.278, 0.284], axis=1), axis=1)
-	std = np.expand_dims(np.expand_dims([0.170, 0.171, 0.173], axis=1), axis=1)
-	input = input.cpu().numpy()
-	for i in range(input.shape[0]):
-		image = np.moveaxis((input[i] * std + mean), 0, -1) * 255
-		image=image.astype(np.uint8).copy()
-		mask=masks[i]
-		mask=mask.cpu().numpy()*255
-		mask=np.moveaxis(mask,0,-1).astype(np.uint8())
-		mask=cv2.resize(mask,(224,224))
-		mask= cv2.cvtColor(mask,cv2.COLOR_GRAY2BGR)
-		image= cv2.addWeighted(image,1.6,mask,1.0,20)
-		cv2.imshow('image', image)
-		cv2.waitKey(200)
+	:param optimizer:
+	:param lr:
+	:param epoch:
+	:return:
+	"""
+	for params_group in optimizer.param_groups:
+		params_group['lr']=lr[epoch]
+
 if __name__ == '__main__':
 	main()

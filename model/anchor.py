@@ -1,6 +1,6 @@
 import numpy as np
 
-input_size = [224,224]
+input_size = [448,448]
 _default_anchors_setting = (
 	dict(layer='p3', stride=32, size=48, scale=[2 ** (1. / 3.), 2 ** (2. / 3.)], aspect_ratio=[0.667, 1, 1.5]), #7 *7
 	dict(layer='p4', stride=64, size=96, scale=[2 ** (1. / 3.), 2 ** (2. / 3.)], aspect_ratio=[0.667, 1, 1.5]), # 7*7

@@ -10,7 +10,7 @@ normalize = transforms.Normalize(mean=[0.275, 0.278, 0.284],
 								 std=[0.170, 0.171, 0.173])
 
 
-def preprocess_strategy(dataset='ImageNet'):
+def preprocess_strategy(dataset='CUB'):
 	if dataset.startswith('CUB'):
 		train_transforms = transforms.Compose([
 			transforms.Resize(448),

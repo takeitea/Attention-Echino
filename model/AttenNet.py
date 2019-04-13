@@ -1,5 +1,5 @@
 from torch import nn
-from .resnet import resnet18
+from .resnet import resnet50
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -12,7 +12,7 @@ PROPOSAL_NUM=6
 class ProposalNet(nn.Module):
 	def __init__(self):
 		super(ProposalNet,self).__init__()
-		self.down1=nn.Conv2d(512,128,1,1,0)
+		self.down1=nn.Conv2d(512*4,128,3,1,1)
 		self.down2=nn.Conv2d(128,128,3,2,1)
 		self.down3=nn.Conv2d(128,128,3,2,1)
 
@@ -34,18 +34,19 @@ class ProposalNet(nn.Module):
 class Attention_Net(nn.Module):
 	def __init__(self,topN=4,num_classes=9):
 		super(Attention_Net,self).__init__()
-		self.pretrained_model=resnet18(pretrained=True)
+		self.pretrained_model=resnet50(pretrained=True)
 		self.pretrained_model.avgpool=nn.AdaptiveAvgPool2d(1)
-		self.pretrained_model.fc=nn.Linear(512,num_classes)
+		self.pretrained_model.fc=nn.Linear(512*4,num_classes)
 		self.proposal_net=ProposalNet()
 		self.topN=topN
-		self.concat_net=nn.Linear(512*(CAT_NUM+1),num_classes)
-		self.partcls_net=nn.Linear(512,num_classes)
+		self.concat_net=nn.Linear(512*(CAT_NUM+1)*4,num_classes)
+		self.partcls_net=nn.Linear(512*4,num_classes)
 		_,edge_anchors,_=generator_default_anchor_maps()
 		# TODO  next line
 		self.pad_size=224
 		self.edge_anchors=(edge_anchors+224).astype(np.int)
-		self.bilstm=nn.LSTM(512,9,batch_first=True,num_layers=1,bidirectional=True,bias=False)
+		# self.lstm1=nn.LSTM(512,128,batch_first=True,num_layers=1,bidirectional=False,bias=False)
+		# self.lstm2=nn.LSTM(128,128,batch_first=True,num_layers=1,bidirectional=False,bias=False)
 
 	def forward(self, x):
 		resnet_out,rpn_feature,feature=self.pretrained_model(x)
@@ -67,15 +68,26 @@ class Attention_Net(nn.Module):
 				[y0,x0,y1,x1]=top_n_cdds[i][j,1:5].astype(np.int)
 				part_imgs[i:i+1,j]=F.interpolate(x_pad[i:i+1,:,y0:y1,x0:x1],size=(224,224),mode='bilinear',align_corners=True)
 		part_imgs=part_imgs.view(batch*self.topN,3,224,224)
+
 		_,_,part_features=self.pretrained_model(part_imgs.detach())
 		part_feature=part_features.view(batch,self.topN,-1)
+
 		part_feature=part_feature[:,:CAT_NUM,...].contiguous()
 		part_feature=part_feature.view(batch,-1)
+
 		concat_out=torch.cat([part_feature,feature],dim=1)
-
+		# concat_out=concat_out.view(concat_out.size(0),(CAT_NUM+1),-1)
+		# self.lstm1.flatten_parameters()
+		# lstm1,hc=self.lstm1(concat_out)
+		# inv_idx=torch.arange(lstm1.size(1)-1,-1,-1).long().cuda()
+		# inv_lstm1=lstm1.index_select(1,inv_idx)
+		# self.lstm2.flatten_parameters()
+		# lstm2,_=self.lstm2(inv_lstm1,hc)
+		# lstm2=lstm2.contiguous()
+		# lstm2=lstm2.view(-1,lstm2.size(2))
 		concat_logist=self.concat_net(concat_out)
+		# concat_logist=concat_logist.view(x.size(0),(CAT_NUM+1),-1)
 		raw_logist=resnet_out
-
 		part_logits=self.partcls_net(part_features).view(batch,self.topN,-1)
 		return [raw_logist,concat_logist,part_logits, top_n_index,top_n_prob,torch.from_numpy(top_n_cdds).cuda()]
 

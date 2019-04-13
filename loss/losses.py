@@ -63,11 +63,9 @@ class MultiLoss(nn.CrossEntropyLoss):
 	def forward(self, output, target):
 		loss = torch.autograd.Variable(torch.zeros(1), ).cuda()
 
-		output_2 = torch.chunk(output, 2, dim=-1)
-		for output_ in output_2:
-			parts = torch.chunk(output_, 5, dim=1)
-			for part in parts:
-				loss += F.cross_entropy(part.squeeze(1), target)
+		parts = torch.chunk(output, 5, dim=1)
+		for part in parts:
+			loss += F.cross_entropy(part.squeeze(1), target)
 		return loss
 
 
@@ -106,18 +104,19 @@ class Auxiliary_Loss(nn.CrossEntropyLoss):
 		super(Auxiliary_Loss, self).__init__()
 
 	def forward(self, output, target):
-		_,pred=output.topk(2,1)
-		pred=pred.t()
-		idxs=[]
-		for inx,label in enumerate(target.data):
-			if label in pred[:,inx]:
+		_, pred = output.topk(2, 1)
+		pred = pred.t()
+		idxs = []
+		for inx, label in enumerate(target.data):
+			if label in pred[:, inx]:
 				idxs.append(inx)
-		idxs=torch.Tensor(idxs).cuda().long()
+		idxs = torch.Tensor(idxs).cuda().long()
 		if idxs is []:
 			return Variable(torch.zeros(1).cuda())
-		output_hard=output.index_select(0,idxs)
-		target_hard=target.index_select(0,idxs)
-		return F.cross_entropy(output_hard,target_hard)
+		output_hard = output.index_select(0, idxs)
+		target_hard = target.index_select(0, idxs)
+		return F.cross_entropy(output_hard, target_hard)
+
 
 def list_loss(logits, targets):
 	temp = F.log_softmax(logits, -1)
@@ -149,3 +148,129 @@ def KL_Loss(raw_logits, part_logits, target, tmp):
 	for i in range(part_logits.size(1)):
 		kl_loss += kl(F.softmax(raw_logits / tmp, dim=1), F.softmax(part_logits[:, i, :] / tmp, dim=1)) * tmp ** 2
 	return kl_loss / batch_size / part_logits.size(1)
+
+
+Num_classes = 9
+
+
+class ComEnLoss(nn.Module):
+	def __init__(self):
+		super(ComEnLoss, self).__init__()
+
+	def forward(self, yHat, y):
+		self.batchsize = len(y)
+		self.classes = Num_classes
+		yHat = F.softmax(yHat, dim=1)
+		Yg = torch.gather(yHat, 1, torch.unsqueeze(y, 1))
+		Yg_ = (1 - Yg) + 1e-7
+		Px = yHat / Yg_.view(len(yHat), 1)
+		Px_log = torch.log(Px + 1e-10)
+		y_zerohot = torch.ones(self.batchsize, self.classes).scatter_(1, y.view(self.batchsize, 1).data.cpu(), 0)
+		output = Px * Px_log * y_zerohot.cuda()
+		loss = torch.sum(output)
+		loss /= float(self.batchsize)
+		loss /= float(self.classes)
+		return loss
+
+
+class COCOloss(nn.Module):
+	def __init__(self, num_classes, feat_dim, alpha=6.25):
+		super(COCOloss, self).__init__()
+		self.feat_dim = feat_dim
+		self.num_classes = num_classes
+		self.alpha = alpha
+		self.centers = nn.Parameter(torch.randn(num_classes, feat_dim))
+
+	def forward(self, feat):
+		norms = torch.norm(feat, p=2, dim=-1, keepdim=True)
+		nfeat = torch.div(feat, norms)
+		snfeat = self.alpha * nfeat
+		norms_c = torch.norm(self.centers, p=2, dim=-1, keepdim=True)
+		ncenters = torch.div(self.centers, norms_c)
+		logits = torch.matmul(snfeat, torch.transpose(ncenters, 0, 1))
+		return logits
+
+
+class LGMLoss(nn.Module):
+	"""
+	Refer to paper:
+	Weitao Wan, Yuanyi Zhong,Tianpeng Li, Jiansheng Chen
+	Rethinking Feature Distribution for Loss Functions in Image Classification. CVPR 2018
+	re-implement by yirong mao
+	2018 07/02
+	"""
+
+	def __init__(self, num_classes, feat_dim, alpha):
+		super(LGMLoss, self).__init__()
+		self.feat_dim = feat_dim
+		self.num_classes = num_classes
+		self.alpha = alpha
+
+		self.centers = nn.Parameter(torch.randn(num_classes, feat_dim))
+		self.log_covs = nn.Parameter(torch.zeros(num_classes, feat_dim))
+
+	def forward(self, feat, label):
+		batch_size = feat.shape[0]
+		log_covs = torch.unsqueeze(self.log_covs, dim=0)
+
+		covs = torch.exp(log_covs)  # 1*c*d
+		tcovs = covs.repeat(batch_size, 1, 1)  # n*c*d
+		diff = torch.unsqueeze(feat, dim=1) - torch.unsqueeze(self.centers, dim=0)
+		wdiff = torch.div(diff, tcovs)
+		diff = torch.mul(diff, wdiff)
+		dist = torch.sum(diff, dim=-1)  # eq.(18)
+
+		y_onehot = torch.FloatTensor(batch_size, self.num_classes)
+		y_onehot.zero_()
+		y_onehot = Variable(y_onehot).cuda()
+		y_onehot.scatter_(1, torch.unsqueeze(label, dim=-1), self.alpha)
+		y_onehot = y_onehot + 1.0
+		margin_dist = torch.mul(dist, y_onehot)
+
+		slog_covs = torch.sum(log_covs, dim=-1)  # 1*c
+		tslog_covs = slog_covs.repeat(batch_size, 1)
+		margin_logits = -0.5 * (tslog_covs + margin_dist)  # eq.(17)
+		logits = -0.5 * (tslog_covs + dist)
+
+		cdiff = feat - torch.index_select(self.centers, dim=0, index=label.long())
+		cdist = cdiff.pow(2).sum(1).sum(0) / 2.0
+
+		slog_covs = torch.squeeze(slog_covs)
+		reg = 0.5 * torch.sum(torch.index_select(slog_covs, dim=0, index=label.long()))
+		likelihood = (1.0 / batch_size) * (cdist + reg)
+
+		return logits, margin_logits, likelihood
+
+
+class LGMLoss_v0(nn.Module):
+	"""
+	LGMLoss whose covariance is fixed as Identity matrix
+	"""
+
+	def __init__(self, num_classes, feat_dim, alpha):
+		super(LGMLoss_v0, self).__init__()
+		self.feat_dim = feat_dim
+		self.num_classes = num_classes
+		self.alpha = alpha
+
+		self.centers = nn.Parameter(torch.randn(num_classes, feat_dim))
+
+	def forward(self, feat, label):
+		batch_size = feat.shape[0]
+
+		diff = torch.unsqueeze(feat, dim=1) - torch.unsqueeze(self.centers, dim=0)
+		diff = torch.mul(diff, diff)
+		dist = torch.sum(diff, dim=-1)
+
+		y_onehot = torch.FloatTensor(batch_size, self.num_classes)
+		y_onehot.zero_()
+		y_onehot = Variable(y_onehot).cuda()
+		y_onehot.scatter_(1, torch.unsqueeze(label, dim=-1), self.alpha)
+		y_onehot = y_onehot + 1.0
+		margin_dist = torch.mul(dist, y_onehot)
+		margin_logits = -0.5 * margin_dist
+		logits = -0.5 * dist
+
+		cdiff = feat - torch.index_select(self.centers, dim=0, index=label.long())
+		likelihood = (1.0 / batch_size) * cdiff.pow(2).sum(1).sum(0) / 2.0
+		return logits, margin_logits, likelihood

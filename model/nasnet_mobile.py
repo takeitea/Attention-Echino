@@ -15,10 +15,8 @@ Thanks to Anastasiia (https://github.com/DagnyT) for the great help, support and
 from __future__ import print_function, division, absolute_import
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
 from torch.autograd import Variable
-import numpy as np
 
 pretrained_settings = {
     'nasnetamobile': {
@@ -26,11 +24,11 @@ pretrained_settings = {
             'url': 'https://github.com/veronikayurchuk/pretrained-models.pytorch/releases/download/v1.0/nasnetmobile-7e03cead.pth.tar',
             # 'url': 'http://data.lip6.fr/cadene/pretrainedmodels/nasnetamobile-7e03cead.pth',
             'input_space': 'RGB',
-            'input_size': [3, 224, 224], # resize 256
+            'input_size': [3, 299, 299], # resize 256
             'input_range': [0, 1],
-            'mean': [0.5, 0.5, 0.5],
-            'std': [0.5, 0.5, 0.5],
-            'num_classes': 1000
+            'mean': [0.485, 0.456, 0.406],
+            'std': [0.229, 0.224, 0.225],
+            'num_classes': 1010
         },
         # 'imagenet+background': {
         #     # 'url': 'http://data.lip6.fr/cadene/pretrainedmodels/nasnetalarge-a1897284.pth',
@@ -662,7 +660,7 @@ def nasnetamobile(num_classes=1001, pretrained='imagenet'):
 
 if __name__ == "__main__":
 
-    model = nasnetamobile(9)
+    model = nasnetamobile(1010,pretrained=False)
     input = Variable(torch.randn(2, 3, 224, 224))
     output = model(input)
 
