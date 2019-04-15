@@ -111,11 +111,29 @@ class Auxiliary_Loss(nn.CrossEntropyLoss):
 			if label in pred[:, inx]:
 				idxs.append(inx)
 		idxs = torch.Tensor(idxs).cuda().long()
-		if idxs is []:
+		if not len(idxs):
 			return Variable(torch.zeros(1).cuda())
 		output_hard = output.index_select(0, idxs)
 		target_hard = target.index_select(0, idxs)
 		return F.cross_entropy(output_hard, target_hard)
+
+class IMAE(nn.Module):
+	def __init__(self,T):
+		super(IMAE,self).__init__()
+
+		self.T=T
+	def forward(self, output,target):
+		batchsize=output.size(0)
+		logits=F.softmax(output,dim=1)
+		onehot=torch.eye(9)[target].cuda()
+		l1_loss=F.smooth_l1_loss(logits,onehot,reduction='none')
+
+		weight=torch.exp(self.T*logits*(1-logits))
+		weighted_loss=l1_loss*weight
+		return torch.sum(weighted_loss)
+
+
+
 
 
 def list_loss(logits, targets):

@@ -69,9 +69,9 @@ def get_nature(is_test):
 
 	train_dataset = INAT(root=root, ann_file=train_file, is_train=True)
 	val_dataset = INAT(root=root, ann_file=val_file, is_train=False)
-	train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=160, shuffle=True,
+	train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True,
 											   num_workers=32, pin_memory=True)
-	val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=160, shuffle=False, num_workers=32,
+	val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=32,
 											 pin_memory=True)
 
 	return train_loader, val_loader
