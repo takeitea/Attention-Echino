@@ -393,7 +393,7 @@ class INAT(Dataset):
 		self.is_train = is_train
 		self.loader = default_loader
 
-		self.im_size = [224, 224]
+		self.im_size = [331, 331]
 		self.mu_data = [0.485, 0.456, 0.406]
 		self.std_data = [0.229, 0.224, 0.225]
 		self.brightness = 0.4

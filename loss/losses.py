@@ -2,7 +2,7 @@ from torch.autograd import Variable
 import torch.nn as nn
 from torch.nn import functional as F
 import torch
-
+import numpy as np
 
 class ClusteringAffinity(nn.Module):
 	def __init__(self, n_classes, n_centers, sigma, feat_dim, init_weight=True, **kwargs):
@@ -104,7 +104,7 @@ class Auxiliary_Loss(nn.CrossEntropyLoss):
 		super(Auxiliary_Loss, self).__init__()
 
 	def forward(self, output, target):
-		_, pred = output.topk(2, 1)
+		_, pred = output.topk(100, 1)
 		pred = pred.t()
 		idxs = []
 		for inx, label in enumerate(target.data):
@@ -126,11 +126,12 @@ class IMAE(nn.Module):
 		batchsize=output.size(0)
 		logits=F.softmax(output,dim=1)
 		onehot=torch.eye(9)[target].cuda()
-		l1_loss=F.smooth_l1_loss(logits,onehot,reduction='none')
-
+		l1_loss=F.smooth_l1_loss(logits,onehot,reduction="none")
+		logits=torch.cat([ logits[i,k].unsqueeze(0) for i,k in zip(range(batchsize),target)])
 		weight=torch.exp(self.T*logits*(1-logits))
+		l1_loss=torch.sum(l1_loss,dim=1)
 		weighted_loss=l1_loss*weight
-		return torch.sum(weighted_loss)
+		return torch.sum( weighted_loss)
 
 
 

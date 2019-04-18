@@ -4,15 +4,13 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from .anchor import generator_default_anchor_maps,hard_nms
-from .BCNN import BCNN
-import pretrainedmodels
 CAT_NUM=4
 PROPOSAL_NUM=6
 
 class ProposalNet(nn.Module):
 	def __init__(self):
 		super(ProposalNet,self).__init__()
-		self.down1=nn.Conv2d(512*4,128,3,1,1)
+		self.down1=nn.Conv2d(512*4,128,1,1,0)
 		self.down2=nn.Conv2d(128,128,3,2,1)
 		self.down3=nn.Conv2d(128,128,3,2,1)
 
@@ -50,7 +48,7 @@ class Attention_Net(nn.Module):
 
 	def forward(self, x):
 		resnet_out,rpn_feature,feature=self.pretrained_model(x)
-		x_pad=F.pad(x,(self.pad_size,self.pad_size,self.pad_size,self.pad_size),mode='constant',value=0)
+		x_pad=F.pad(x,[self.pad_size,self.pad_size,self.pad_size,self.pad_size],mode='constant',value=0)
 
 		batch=x.size(0)
 		rpn_score=self.proposal_net(rpn_feature.detach())

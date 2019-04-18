@@ -22,16 +22,17 @@ def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of train inature")
 	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
 	arg.add_argument('--store_per_epoch', default=False)
-	arg.add_argument('--epochs', default=80)
+	arg.add_argument('--epochs', default=30)
 	arg.add_argument('--num_classes', default=1010, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.0045)
-	arg.add_argument('--img_size', help='the input size', default=224)
+	arg.add_argument('--img_size', help='the input size', default=331)
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
 	arg.add_argument('--modeldir', help=' the model viz dir ', default='inature_pnas')
 	arg.add_argument('--lr_method', default='step', help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
-	arg.add_argument('--test', default=True, help='whether to test only')
-	arg.add_argument('--resume', default='./inature_a/model_best.pth.tar', help="whether to load checkpoint")
+	arg.add_argument('--test', default=False, help='whether to test only')
+	# arg.add_argument('--resume',default=False)
+	arg.add_argument('--resume', default='./inature_pnas/model_best.pth.tar', help="whether to load checkpoint")
 	arg.add_argument('--start_epoch', default=0)
 	arg.add_argument('--op_file_name', default='./result/kaggle_submission.csv')
 	return arg.parse_args()
@@ -44,14 +45,16 @@ def main():
 	best_prec1 = 0
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
-	model = nasnetamobile(num_classes=args.num_classes).cuda()
+	model =pnasnet5large(num_classes=args.num_classes).cuda()
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-4)
+	if args.resume:
+		restore(args, model, opt, istrain=not args.test,including_opt=True)
 	if args.test:
 		restore(args, model, opt, istrain=not args.test)
 		testloader = get_nature(args.test)
 		test(testloader, model, args)
 		return
-	LR = Learning_rate_generater('step', [40, 60], args.epochs,args)
+	LR = Learning_rate_generater('step', [16, 22], args.epochs,args)
 	print(args)
 	model = torch.nn.DataParallel(model, range(args.gpu))
 	critertion = torch.nn.CrossEntropyLoss()
@@ -77,8 +80,8 @@ def main():
 		else:
 			filename.append(os.path.join(args.modeldir, 'checkpoint.pth.tar'))
 		filename.append(os.path.join(args.modeldir, 'model_best.pth.tar'))
-		save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(), 'best_prec1': best_prec1,
-						 'optimizer': opt.state_dict()}, is_best, filename)
+		save_checkpoint({'epoch': epoch + 1, 'state_dict': model.state_dict(), 'best_prec1': best_prec1,"global_epoch":
+		epoch+1+args.start_epoch, 'optimizer': opt.state_dict()}, is_best, filename)
 		plot_curve(stats, args.modeldir, True)
 	sio.savemat(os.path.join(args.modeldir, 'stats.mat'), {'data': stats})
 	stats.get_last5()

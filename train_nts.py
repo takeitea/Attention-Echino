@@ -4,17 +4,15 @@ import time
 import numpy as np
 import torch.optim as optim
 import os
-import random
 import scipy.io as sio
 from model import Attention_Net
-from utils import visualize_atten_softmax, visualize_atten_sigmoid
 from utils import AvgMeter, accuracy, plot_curve,accuracy_lstm,restore
 from utils import vizNet, Stats, save_checkpoint, loadpartweight
 from loss import list_loss, ranking_loss, MultiLoss,KL_Loss,Auxiliary_Loss
 from data import get_data
 import cv2
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 best_prec1 = 0
 PROPOSAL_NUM = 6
 
@@ -23,7 +21,7 @@ def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of resnet18")
 	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
 	arg.add_argument('--store_per_epoch', default=False)
-	arg.add_argument('--epochs', default=100)
+	arg.add_argument('--epochs', default=30)
 	arg.add_argument('--num_classes', default=9, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
@@ -34,9 +32,6 @@ def arg_pare():
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
-	arg.add_argument('--world_size', default=1, type=int, help='number of distributed processes')
-	arg.add_argument('--dist_url', default='tcp://127.0.0.01:123', type=str, help='url used to set up')
-	arg.add_argument('--dist_backend', default='gloo', type=str, help='distributed backend')
 	arg.add_argument('--evaluate', default=False, help='whether to evaluate only')
 	arg.add_argument('--resume', default=False, help="whether to load checkpoint")
 	arg.add_argument('--start_epoch', default=0)
@@ -56,7 +51,7 @@ def main():
 	# model=loadpartweight(model)
 	model = Attention_Net(topN=6,num_classes=args.num_classes).cuda()
 
-	LR = Learning_rate_generater('step', [30, 50], args.epochs)
+	LR = Learning_rate_generater('step', [17, 25], args.epochs)
 	params_list = [{'params': model.pretrained_model.parameters(), 'lr': args.lr,
 					'weight_decay': args.weight_decay}, ]
 	params_list.append({'params': model.proposal_net.parameters(), 'lr': args.lr,

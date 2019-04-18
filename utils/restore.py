@@ -22,7 +22,6 @@ def restore(args, model, optimizer, istrain=True, including_opt=False):
 		try:
 			if istrain:
 				args.current_epoch = checkpoint['epoch'] + 1
-				args.global_counter = checkpoint['global_counter'] + 1
 				if including_opt:
 					optimizer.load_state_dict(checkpoint['optimizer'])
 			old_state_dict=model.state_dict()
