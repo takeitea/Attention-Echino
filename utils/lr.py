@@ -9,6 +9,7 @@ class Learning_rate_generater(object):
 
 	def __init__(self, method, params, total_epoch,args):
 		self.args = args
+		self.warm_up = True
 		if method == 'step':
 			lr_factor, lr = self.step(params, total_epoch)
 		elif method == 'log':
@@ -35,6 +36,10 @@ class Learning_rate_generater(object):
 					count += 1
 			lr_factor.append(np.power(base_factor, count))
 			lr.append( self.args.lr * lr_factor[epoch])
+		if self.warm_up:
+			for epoch in range(5):
+				lr_=1e-5+(self.args.lr-1e-5)*epoch/5
+				lr[epoch]=lr_
 		return lr_factor, lr
 
 	def log(self, params, total_epoch):

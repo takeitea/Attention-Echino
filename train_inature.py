@@ -15,7 +15,7 @@ from loss import Auxiliary_Loss
 from utils import AvgMeter, accuracy, plot_curve, restore
 from utils import Stats, save_checkpoint, Learning_rate_generater
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 
 
 def arg_pare():
@@ -24,13 +24,13 @@ def arg_pare():
 	arg.add_argument('--store_per_epoch', default=False)
 	arg.add_argument('--epochs', default=30)
 	arg.add_argument('--num_classes', default=1010, type=int)
-	arg.add_argument('--lr', help='learn rate', default=0.0045)
+	arg.add_argument('--lr', help='learn rate', default=0.00045)
 	arg.add_argument('--img_size', help='the input size', default=331)
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
 	arg.add_argument('--modeldir', help=' the model viz dir ', default='inature_pnas')
 	arg.add_argument('--lr_method', default='step', help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
-	arg.add_argument('--test', default=False, help='whether to test only')
+	arg.add_argument('--test', default=True, help='whether to test only')
 	# arg.add_argument('--resume',default=False)
 	arg.add_argument('--resume', default='./inature_pnas/model_best.pth.tar', help="whether to load checkpoint")
 	arg.add_argument('--start_epoch', default=0)
@@ -51,6 +51,7 @@ def main():
 		restore(args, model, opt, istrain=not args.test,including_opt=True)
 	if args.test:
 		restore(args, model, opt, istrain=not args.test)
+		model = torch.nn.DataParallel(model, range(args.gpu))
 		testloader = get_nature(args.test)
 		test(testloader, model, args)
 		return

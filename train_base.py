@@ -8,13 +8,13 @@ import torch
 import torch.optim as optim
 
 from data import get_data
-from loss import Auxiliary_Loss,IMAE
+from loss import Auxiliary_Loss,ComEnLoss
 from model import drn_c_26
 from utils import AvgMeter, accuracy, plot_curve, restore
 from utils import SAVE_ATTEN
 from utils import Stats, save_checkpoint,Learning_rate_generater
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,5,6,7"
 
 
 
@@ -29,11 +29,11 @@ def arg_pare():
 	arg.add_argument('--img_size', help='the input size', default=224)
 	arg.add_argument('--dir', help='the dataset root', default='./datafolder/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='drn_imae')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='drn_warm')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method',default='step',help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
-	arg.add_argument('--evaluate', default=False, help='whether to evaluate only')
+	arg.add_argument('--evaluate', default=True, help='whether to evaluate only')
 	arg.add_argument('--resume', default='./result/drc_aloss/model_best.pth.tar', help="whether to load checkpoint")
 	arg.add_argument('--start_epoch', default=0)
 	return arg.parse_args()
@@ -51,16 +51,17 @@ def main():
 
 	model.cuda()
 	LR = Learning_rate_generater('step', [17,25], args.epochs,args)
-	# LR.plot_lr()
+	LR.plot_lr()
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-4)
+	# cmopt=optim.SGD(model.parameters(),lr=args.lr,momentum=0.9,weight_decay=1e-4)
 	print(args)
 	# vizNet(model, args.modeldir)
 	if args.evaluate:
 		restore(args, model, opt,  istrain=not args.evaluate)
 	model = torch.nn.DataParallel(model, range(args.gpu))
 	trainloader, valloader = get_data(args)
-	# critertion = torch.nn.CrossEntropyLoss()
-	critertion=IMAE(8)
+	critertion = torch.nn.CrossEntropyLoss()
+
 	if args.evaluate:
 		evaluate(valloader, model, critertion,args,True)
 		return
@@ -102,13 +103,15 @@ def train(trainloader, model, criterion, optimizer, epoch):
 	top2 = AvgMeter()
 	model.train()
 	end = time.time()
-	aloss=Auxiliary_Loss()
+	# aloss=Auxiliary_Loss()
+	# cmloss=ComEnLoss()
+
 	for i, (input, target) in enumerate(trainloader):
 		data_time.update(time.time() - end)
 		input, target = input.cuda(), target.cuda()
 		out1= model(input)
 
-		loss = criterion(out1, target)+5*aloss(out1,target)
+		loss = criterion(out1, target)
 		prec1, prec2 = accuracy(out1, target,topk=(1, 2))
 		losses.update(loss.item(), input.size(0))
 		top1.update(prec1[0], input.size(0))
@@ -118,6 +121,11 @@ def train(trainloader, model, criterion, optimizer, epoch):
 		optimizer.step()
 		batch_time.update(time.time() - end)
 		end = time.time()
+		# out1=model(input)
+		# loss=cmloss(out1,target)
+		# cmopt.zero_grad()
+		# loss.backward()
+		# cmopt.step()
 		if i % args.print_freq == 0:
 			print('Epoch: [{0}][{1}/{2}]\t'
 				  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
