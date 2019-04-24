@@ -14,3 +14,6 @@ from .drn import *
 from .masknet import Masknet18
 from .drn_mask import drn_c_26_mask
 from .nasnet_mobile import nasnetamobile
+# from .prec_resnet import PreActResNet18
+from .unet_model import UNet
+from .EchiNet import EchiNet_18

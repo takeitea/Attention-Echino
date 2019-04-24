@@ -104,7 +104,7 @@ class Auxiliary_Loss(nn.CrossEntropyLoss):
 		super(Auxiliary_Loss, self).__init__()
 
 	def forward(self, output, target):
-		_, pred = output.topk(100, 1)
+		_, pred = output.topk(2, 1)
 		pred = pred.t()
 		idxs = []
 		for inx, label in enumerate(target.data):

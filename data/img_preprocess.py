@@ -1,10 +1,10 @@
 from torchvision import transforms
-# import albumentations
-# from albumentations.pytorch.transforms import ToTensor
-# import imgaug as ia
+import albumentations
+from albumentations.pytorch.transforms import ToTensor
+import imgaug as ia
 import numpy as np
 import torch
-# from imgaug import augmenters as iaa
+from imgaug import augmenters as iaa
 import cv2
 normalize = transforms.Normalize(mean=[0.275, 0.278, 0.284],
 								 std=[0.170, 0.171, 0.173])
@@ -55,8 +55,8 @@ def preprocess_strategy(dataset='ImageNet'):
 		])
 	elif dataset.startswith('ImageNet'):
 		train_transforms = transforms.Compose([
-			transforms.Resize(250),
-			transforms.RandomResizedCrop(224),
+			transforms.Resize(350),
+			transforms.RandomResizedCrop(331),
 			transforms.RandomHorizontalFlip(),
 			transforms.ToTensor(),
 			normalize

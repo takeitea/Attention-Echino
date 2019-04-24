@@ -18,7 +18,7 @@ MEANS = [0.275, 0.278, 0.284]
 STDS = [0.170, 0.171, 0.173]
 
 IMG_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif']
-
+# id2cat=
 
 def pil_loader(path):
 	# open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
@@ -393,7 +393,7 @@ class INAT(Dataset):
 		self.is_train = is_train
 		self.loader = default_loader
 
-		self.im_size = [331, 331]
+		self.im_size = [224, 224]
 		self.mu_data = [0.485, 0.456, 0.406]
 		self.std_data = [0.229, 0.224, 0.225]
 		self.brightness = 0.4
@@ -445,3 +445,17 @@ class INAT(Dataset):
 				tax_ids[ii] = taxonomy[tt][cc]
 			classes_taxonomic[cc] = tax_ids
 		return taxonomy, classes_taxonomic
+class Pre_Image:
+	def __init__(self):
+		self.im_size = [331, 331]
+		self.mu_data = [0.485, 0.456, 0.406]
+		self.std_data = [0.229, 0.224, 0.225]
+		self.center_crop = transforms.CenterCrop((self.im_size[0], self.im_size[1]))
+		self.norm_aug = transforms.Normalize(mean=self.mu_data, std=self.std_data)
+		self.tensor_aug = transforms.ToTensor()
+	def __call__(self, image):
+		# image=self.center_crop(image)
+		image=self.tensor_aug(image)
+		image=self.norm_aug(image)
+		image=image.cuda()
+		return image.unsqueeze(0)

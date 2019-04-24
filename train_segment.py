@@ -9,12 +9,12 @@ import torch.optim as optim
 
 from data import get_data
 from loss import Auxiliary_Loss,ComEnLoss
-from model import drn_c_26,EchiNet_18
+from model import PreActResNet18
 from utils import AvgMeter, accuracy, plot_curve, restore
 from utils import SAVE_ATTEN
 from utils import Stats, save_checkpoint,Learning_rate_generater
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,5,6,7"
 
 
 
@@ -22,14 +22,14 @@ def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of base")
 	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
 	arg.add_argument('--store_per_epoch', default=False)
-	arg.add_argument('--epochs', default=50)
+	arg.add_argument('--epochs', default=30)
 	arg.add_argument('--num_classes', default=9, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
 	arg.add_argument('--img_size', help='the input size', default=224)
-	arg.add_argument('--dir', help='the dataset root', default='./datafolder/c9_224/')
+	arg.add_argument('--dir', help='the dataset root', default='./datafolder/c9/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='Echi224')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='pre_18')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method',default='step',help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
@@ -45,11 +45,11 @@ def main():
 	best_prec1 = 0
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
-	model =EchiNet_18().cuda()
+	model = PreActResNet18().cuda()
 	# model.fc=torch.nn.Linear(512,9).cuda()
 
 	model.cuda()
-	LR = Learning_rate_generater('step', [30,45], args.epochs,args)
+	LR = Learning_rate_generater('step', [17,25], args.epochs,args)
 	LR.plot_lr()
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-4)
 	# cmopt=optim.SGD(model.parameters(),lr=args.lr,momentum=0.9,weight_decay=1e-4)
@@ -102,7 +102,7 @@ def train(trainloader, model, criterion, optimizer, epoch):
 	top2 = AvgMeter()
 	model.train()
 	end = time.time()
-	aloss=Auxiliary_Loss()
+	# aloss=Auxiliary_Loss()
 	# cmloss=ComEnLoss()
 
 	for i, (input, target) in enumerate(trainloader):
@@ -110,7 +110,7 @@ def train(trainloader, model, criterion, optimizer, epoch):
 		input, target = input.cuda(), target.cuda()
 		out1= model(input)
 
-		loss = criterion(out1, target)+5*aloss(out1,target)
+		loss = criterion(out1, target)
 		prec1, prec2 = accuracy(out1, target,topk=(1, 2))
 		losses.update(loss.item(), input.size(0))
 		top1.update(prec1[0], input.size(0))

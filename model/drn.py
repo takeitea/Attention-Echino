@@ -1,5 +1,5 @@
 import pdb
-
+import torch
 import torch.nn as nn
 import math
 import torch.utils.model_zoo as model_zoo
@@ -117,8 +117,6 @@ class DRN(nn.Module):
         self.out_dim = channels[-1]
         self.out_middle = out_middle
         self.arch = arch
-        self.prelu=nn.ReLU()
-        self.ip2=nn.Linear(128,9)
         if arch == 'C':
             self.conv1 = nn.Conv2d(3, channels[0], kernel_size=7, stride=1,
                                    padding=3, bias=False)
@@ -421,3 +419,7 @@ def drn_d_107(pretrained=False, **kwargs):
     if pretrained:
         model.load_state_dict(model_zoo.load_url(model_urls['drn-d-107']))
     return model
+
+# model=drn_c_26()
+# input=torch.randn([4,3,224,224])
+# output=model(input)

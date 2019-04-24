@@ -3,18 +3,18 @@ import tqdm
 import os
 import shutil
 import time
-from model import nasnetamobile
+from model import EchiNet_18
 from pretrainedmodels.models.pnasnet import pnasnet5large
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.io as sio
 import torch
 import torch.optim as optim
-from data import get_nature
+from data import get_nature,Pre_Image
 from loss import Auxiliary_Loss
 from utils import AvgMeter, accuracy, plot_curve, restore
 from utils import Stats, save_checkpoint, Learning_rate_generater
-
+import cv2
 os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 
 
@@ -24,17 +24,18 @@ def arg_pare():
 	arg.add_argument('--store_per_epoch', default=False)
 	arg.add_argument('--epochs', default=30)
 	arg.add_argument('--num_classes', default=1010, type=int)
-	arg.add_argument('--lr', help='learn rate', default=0.00045)
+	arg.add_argument('--lr', help='learn rate', default=0.0045)
 	arg.add_argument('--img_size', help='the input size', default=331)
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='inature_pnas')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='inature_Echi')
 	arg.add_argument('--lr_method', default='step', help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
-	arg.add_argument('--test', default=True, help='whether to test only')
-	# arg.add_argument('--resume',default=False)
-	arg.add_argument('--resume', default='./inature_pnas/model_best.pth.tar', help="whether to load checkpoint")
+	arg.add_argument('--test', default=False, help='whether to test only')
+	arg.add_argument('--resume',default=False)
+	# arg.add_argument('--resume', default='./inature_pnas/model_best.pth.tar', help="whether to load checkpoint")
 	arg.add_argument('--start_epoch', default=0)
 	arg.add_argument('--op_file_name', default='./result/kaggle_submission.csv')
+	arg.add_argument('--demo',default=False)
 	return arg.parse_args()
 
 
@@ -45,11 +46,26 @@ def main():
 	best_prec1 = 0
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
-	model =pnasnet5large(num_classes=args.num_classes).cuda()
+	model =EchiNet_18().cuda()
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-4)
 	if args.resume:
 		restore(args, model, opt, istrain=not args.test,including_opt=True)
-	if args.test:
+	if args.demo:
+		model=model.eval()
+		sr_image=cv2.imread(args.demo)
+		image=cv2.resize(sr_image.copy(),(331,331))
+		pi=Pre_Image()
+		image=pi(image)
+		restore(args, model, opt, istrain=not args.test)
+		out=model(image)
+		score,pred=torch.topk(out,k=1,dim=1)
+		pred=pred.cpu().numpy()
+		# cat=id2cat(pred)
+		cv2.putText(sr_image,str(pred[0][0]),(50,50),fontFace=cv2.FONT_HERSHEY_COMPLEX,fontScale=1,color=(0,255,255),thickness=1)
+		cv2.imwrite('out.jpg',sr_image)
+		return
+
+	if args.test :
 		restore(args, model, opt, istrain=not args.test)
 		model = torch.nn.DataParallel(model, range(args.gpu))
 		testloader = get_nature(args.test)
