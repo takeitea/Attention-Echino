@@ -3,7 +3,7 @@ import tqdm
 import os
 import shutil
 import time
-from model import EchiNet_18
+from model import se_res2net50,res2next29_6cx24wx4scale
 from pretrainedmodels.models.pnasnet import pnasnet5large
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,24 +15,24 @@ from loss import Auxiliary_Loss
 from utils import AvgMeter, accuracy, plot_curve, restore
 from utils import Stats, save_checkpoint, Learning_rate_generater
 import cv2
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1,5,6,7"
 
 
 def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of train inature")
-	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
+	arg.add_argument('-bs', '--batch_size', help='batch size', default=32)
 	arg.add_argument('--store_per_epoch', default=False)
-	arg.add_argument('--epochs', default=30)
+	arg.add_argument('--epochs', default=80)
 	arg.add_argument('--num_classes', default=1010, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.0045)
 	arg.add_argument('--img_size', help='the input size', default=331)
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='inature_Echi')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='inature_res2')
 	arg.add_argument('--lr_method', default='step', help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
 	arg.add_argument('--test', default=False, help='whether to test only')
-	arg.add_argument('--resume',default=False)
-	# arg.add_argument('--resume', default='./inature_pnas/model_best.pth.tar', help="whether to load checkpoint")
+	# arg.add_argument('--resume',default=False)
+	arg.add_argument('--resume', default='./inature_res2/model_best.pth.tar', help="whether to load checkpoint")
 	arg.add_argument('--start_epoch', default=0)
 	arg.add_argument('--op_file_name', default='./result/kaggle_submission.csv')
 	arg.add_argument('--demo',default=False)
@@ -46,7 +46,7 @@ def main():
 	best_prec1 = 0
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
-	model =EchiNet_18().cuda()
+	model =res2next29_6cx24wx4scale().cuda()
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-4)
 	if args.resume:
 		restore(args, model, opt, istrain=not args.test,including_opt=True)
@@ -71,7 +71,7 @@ def main():
 		testloader = get_nature(args.test)
 		test(testloader, model, args)
 		return
-	LR = Learning_rate_generater('step', [16, 22], args.epochs,args)
+	LR = Learning_rate_generater('step', [40, 60], args.epochs,args)
 	print(args)
 	model = torch.nn.DataParallel(model, range(args.gpu))
 	critertion = torch.nn.CrossEntropyLoss()
@@ -117,7 +117,7 @@ def train(trainloader, model, criterion, optimizer, epoch):
 		data_time.update(time.time() - end)
 		input, target = input.cuda(), target.cuda()
 		out1 = model(input)
-		loss = criterion(out1, target)+5*aloss(out1,target)
+		loss = criterion(out1, target)
 		prec1, prec2 = accuracy(out1, target, topk=(1, 2))
 		losses.update(loss.item(), input.size(0))
 		top1.update(prec1[0], input.size(0))

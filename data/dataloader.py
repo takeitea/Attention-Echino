@@ -1,23 +1,25 @@
 import torch
+import cv2
 import json
-from .img_preprocess import preprocess_strategy, preprocess_strategy_with_mask
+from .img_preprocess import preprocess_strategy,ImgAugTransform
 import torchvision.datasets
+from .prepare_image import ResizePadding
 import torchvision.transforms as transforms
 import torch.utils.data
 from PIL import Image
 import matplotlib.pyplot as plt
-from torch.utils.data import distributed
 from torchvision.datasets import DatasetFolder
 import numpy as np
 import os
 import re
 from torch.utils.data import Dataset
-from .img_preprocess import ImgAugTransform
 
 MEANS = [0.275, 0.278, 0.284]
 STDS = [0.170, 0.171, 0.173]
 
 IMG_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif']
+
+
 # id2cat=
 
 def pil_loader(path):
@@ -25,7 +27,8 @@ def pil_loader(path):
 	with open(path, 'rb') as f:
 		img = Image.open(f)
 		return img.convert('RGB')
-
+def cv2_loader(path):
+	return cv2.imread(path)
 
 def accimage_loader(path):
 	import accimage
@@ -46,13 +49,107 @@ def default_loader(path):
 
 def get_data(args):
 	trans_train, val_train = preprocess_strategy()
-	trainset = MyFolder(root=args.dir + 'train', transform=trans_train)
-	valset = ValFolder(root=args.dir + 'val', transform=val_train)
+	trainset = MyFolder(root=args.dir + 'train', transform=trans_train,aug=args.aug)
+	valset = ValFolder(root=args.dir + 'val', transform=val_train,aug=args.aug)
 	trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=32,
 											  pin_memory=True)
 	valloader = torch.utils.data.DataLoader(valset, batch_size=50, shuffle=False, num_workers=32,
 											pin_memory=True)
 	return trainloader, valloader
+
+
+class Detectfolder(Dataset):
+	def __init__(self, is_train=True, transfer=None,aug=False,test=False,outsample=False,big=False,sub=-1):
+		self.root = '/data/wen/data/C9/'
+		self.test=test
+		self.outsample=outsample
+		if is_train:
+			if aug:
+				self.anno_path=self.root+'train_aug.txt'
+				self.image_path=self.root+'train_aug'
+				if big:
+					self.anno_path=self.root+'train_big_aug.txt'
+					self.image_path=self.root+'train_big_aug'
+			else:
+				if sub>-1:
+					self.anno_path = self.root + 'train_sub'+str(sub)+'.txt'
+				else:
+					self.anno_path=self.root+'train.txt'
+				self.image_path = self.root + 'train'
+		else:
+			if test:
+
+				self.anno_path = self.root + 'output.txt'
+			else:
+				if sub>-1:
+
+					self.anno_path=self.root+'test_sub'+str(sub)+'.txt'
+				else:
+					self.anno_path=self.root+'test.txt'
+			self.image_path = self.root + 'test'
+		self.name2id = {'AE1': 0, 'AE2': 1, 'AE3': 2, 'CE1': 3, 'CE2': 4, 'CE3': 5, 'CE4': 6, 'CE5': 7, 'CL': 8}
+		if sub>-1:
+			subclass = [['CL', 'CE1'], ['CE2', 'CE3', 'CE4'], ['AE1', 'AE2', 'AE3']]
+			self.name2id={ subclass[sub][i]:i for i in range(len(subclass[sub]))}
+		self.id2name = {self.name2id[k]: k for k in self.name2id.keys()}
+		self.samples = []
+		self.image_size = [224, 224]
+		self.trans = transfer
+		self.resizepadding=ResizePadding()
+		for line in open(self.anno_path, 'r').readlines():
+			if aug and is_train:
+				sample=line.strip().split(' ')[:]
+				del sample[1]
+			elif test:
+				sample=line.strip().split(' ')[:-1]
+			else:
+				sample = line.strip().split(' ')[:]
+			self.samples.append(sample)
+
+	def __len__(self):
+		return len(self.samples)
+
+	def __getitem__(self, idx):
+		sample = self.samples[idx]
+		name = sample[0]
+		image_path = os.path.join(self.image_path, name)
+
+		image = cv2.imread(image_path)
+
+		image = np.array(image, dtype=np.uint8)
+		image_size = image.shape
+		x1, y1, x2, y2 = map(int,sample[2:])
+
+		full_image = image[y1:y2, x1:x2,:].copy()
+		zoomin_image=image[int(y1+0.1*(y2-y1)):int(y2-0.1*(y2-y1)),int(x1+0.1*(x2-x1)):int(x2-0.1*(x2-x1)),:].copy()
+		zoomout_image=image[max(0,int(y1-0.1*(y2-y1))):min(image_size[0],int(y2+0.1*(y2-y1))),max(0,int(x1-0.1*(x2-x1))):
+					  min(image_size[1],int(x2+0.1*(x2-x1))),:].copy()
+		paddiing_image=self.resizepadding.transform(full_image.copy())
+		target = self.name2id[sample[1]]
+		if self.trans:
+			zoomin_image=self.trans(Image.fromarray(zoomin_image))
+			zoomout_image=self.trans(Image.fromarray(zoomout_image))
+			paddiing_image=self.trans(Image.fromarray(paddiing_image))
+			full_image=self.trans(Image.fromarray(full_image))
+
+		inputs=torch.stack(( full_image,zoomin_image,zoomout_image ,paddiing_image),dim=0)
+		if self.outsample:
+			return inputs,target,sample
+		return inputs, target
+
+def get_RE_data(args):
+	trans_train, val_train = preprocess_strategy()
+	trainset = Detectfolder(is_train=True, transfer=trans_train,sub=args.sub)
+	valset = Detectfolder(is_train=False, transfer=val_train,outsample=True,sub=args.sub)
+	test=Detectfolder(is_train=False,transfer=val_train,test=args.test,sub=args.sub)
+	trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=32,
+											  pin_memory=True)
+	valloader = torch.utils.data.DataLoader(valset, batch_size=50, shuffle=False, num_workers=32,
+											pin_memory=True)
+	testloader=torch.utils.data.DataLoader(test,batch_size=50,shuffle=False,num_workers=32,pin_memory=True)
+	return trainloader, valloader,testloader
+
+
 
 
 def get_nature(is_test):
@@ -69,9 +166,9 @@ def get_nature(is_test):
 
 	train_dataset = INAT(root=root, ann_file=train_file, is_train=True)
 	val_dataset = INAT(root=root, ann_file=val_file, is_train=False)
-	train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True,
+	train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=100, shuffle=True,
 											   num_workers=32, pin_memory=True)
-	val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=32,
+	val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=50, shuffle=False, num_workers=32,
 											 pin_memory=True)
 
 	return train_loader, val_loader
@@ -144,11 +241,12 @@ class MyFolder(DatasetFolder):
 	"""
 
 	def __init__(self, root, transform=None, target_transform=None, with_path=None,
-				 loader=default_loader):
+				 loader=default_loader,aug=False):
 		self.with_path = with_path
 		super(MyFolder, self).__init__(root, loader, IMG_EXTENSIONS,
 									   transform=transform,
 									   target_transform=target_transform)
+		self.aug=aug
 		self.imgs = self.samples
 
 	def __getitem__(self, index):
@@ -161,10 +259,14 @@ class MyFolder(DatasetFolder):
 		"""
 		path, target = self.samples[index]
 		sample = self.loader(path)
+
 		if self.transform is not None:
-			# data = {"image": np.array(sample)}
-			sample = self.transform(sample)
-		# sample = self.transform(**data)['image']
+			if self.aug:
+				data = {"image": np.array(sample)}
+				sample = self.transform(**data)['image']
+			else:
+				sample = self.transform(sample)
+
 		if self.target_transform is not None:
 			target = self.target_transform(target)
 		if self.with_path:
@@ -197,10 +299,11 @@ class MaskedFolder(DatasetFolder):
 		imgs (list): List of (image path, class_index) tuples
 	"""
 
-	def __init__(self, root, transform=None, target_transform=None, with_path=None,
+	def __init__(self, root, transform=None, target_transform=None, with_path=None, aug=False,
 				 loader=default_loader):
 		self.with_path = with_path
 		self.root = root
+		self.aug = aug
 		self.datpad = re.compile(r'(.*)/(.*)/(.*/.*/.*)(\.jpg$)')
 		super(MaskedFolder, self).__init__(root, loader, IMG_EXTENSIONS,
 										   transform=transform,
@@ -239,9 +342,12 @@ class MaskedFolder(DatasetFolder):
 		sample = Image.fromarray(sample)
 
 		if self.transform is not None:
-			# data = {"image": np.array(sample)}
-			sample = self.transform(sample)
-		# sample = self.transform(**data)['image']
+			if self.aug:
+				data = {"image": np.array(sample)}
+
+				sample = self.transform(**data)['image']
+			else:
+				sample = self.transform(sample)
 		if self.target_transform is not None:
 			target = self.target_transform(target)
 		if self.with_path:
@@ -250,24 +356,31 @@ class MaskedFolder(DatasetFolder):
 
 
 class ValFolder(MyFolder):
-	def __init__(self, root, transform=None, target_transform=None, with_path=True, loader=default_loader):
+	def __init__(self, root, transform=None, target_transform=None, with_path=True, loader=default_loader, aug=False):
 		self.with_path = with_path
 		super(ValFolder, self).__init__(root, transform, target_transform, with_path=True, loader=loader)
 		self.imgs = self.samples
+		self.aug = aug
 
 	def __getitem__(self, idx):
 		path, target = self.samples[idx]
 		sample = self.loader(path)
 		if self.transform is not None:
-			sample = self.transform(sample)
-		# data = {"image": np.array(sample)}
-		# sample = self.transform(sample)
-		# sample = self.transform(**data)['image']
+			if self.aug:
+
+				data = {"image": np.array(sample)}
+
+				sample = self.transform(**data)['image']
+			else:
+				sample = self.transform(sample)
 		if self.target_transform is not None:
 			target = self.target_transform(target)
 		if self.with_path:
 			return sample, target, path
 		return sample, target
+
+
+
 
 
 class MaskFolder(Dataset):
@@ -445,6 +558,8 @@ class INAT(Dataset):
 				tax_ids[ii] = taxonomy[tt][cc]
 			classes_taxonomic[cc] = tax_ids
 		return taxonomy, classes_taxonomic
+
+
 class Pre_Image:
 	def __init__(self):
 		self.im_size = [331, 331]
@@ -453,9 +568,10 @@ class Pre_Image:
 		self.center_crop = transforms.CenterCrop((self.im_size[0], self.im_size[1]))
 		self.norm_aug = transforms.Normalize(mean=self.mu_data, std=self.std_data)
 		self.tensor_aug = transforms.ToTensor()
+
 	def __call__(self, image):
 		# image=self.center_crop(image)
-		image=self.tensor_aug(image)
-		image=self.norm_aug(image)
-		image=image.cuda()
+		image = self.tensor_aug(image)
+		image = self.norm_aug(image)
+		image = image.cuda()
 		return image.unsqueeze(0)

@@ -1,7 +1,6 @@
 from torchvision import transforms
 import albumentations
 from albumentations.pytorch.transforms import ToTensor
-import imgaug as ia
 import numpy as np
 import torch
 from imgaug import augmenters as iaa
@@ -24,6 +23,17 @@ def preprocess_strategy(dataset='ImageNet'):
 			transforms.CenterCrop(448),
 			transforms.ToTensor(),
 			normalize,
+		])
+	elif dataset.startswith('Box'):
+		train_transforms=transforms.Compose([
+			transforms.Resize(224,224),
+			transforms.ToTensor(),
+			normalize
+		])
+		val_transforms=transforms.Compose([
+			transforms.Resize(224,224),
+			transforms.ToTensor(),
+			normalize
 		])
 	elif dataset.startswith('Aircraft'):
 		train_transforms = transforms.Compose([
@@ -55,8 +65,8 @@ def preprocess_strategy(dataset='ImageNet'):
 		])
 	elif dataset.startswith('ImageNet'):
 		train_transforms = transforms.Compose([
-			transforms.Resize(350),
-			transforms.RandomResizedCrop(331),
+			transforms.Resize(250),
+			transforms.RandomResizedCrop(224),
 			transforms.RandomHorizontalFlip(),
 			transforms.ToTensor(),
 			normalize
@@ -70,30 +80,26 @@ def preprocess_strategy(dataset='ImageNet'):
 	elif dataset.startswith('c9'):
 		train_transforms = \
 			albumentations.Compose([
-				albumentations.OneOf([
-					albumentations.CLAHE(clip_limit=2),
-					albumentations.RandomGamma(),
-					albumentations.NoOp(),
-					albumentations.RandomBrightnessContrast()]),
-				albumentations.OneOf([
-					albumentations.ElasticTransform(),
-					albumentations.MotionBlur(),
-					albumentations.Cutout(),
-					albumentations.NoOp()]),
-				albumentations.OneOf([
-					albumentations.RandomScale(),
-					albumentations.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.50, rotate_limit=10, p=0.75)]),
-				albumentations.SmallestMaxSize(max_size=250),
+				# albumentations.OneOf([
+					albumentations.CLAHE(),
+				# 	albumentations.RandomGamma(),
+				# 	albumentations.RandomBrightnessContrast(),
+				# 	albumentations.HueSaturationValue(hue_shift_limit=20,sat_shift_limit=50,val_shift_limit=50),
+				# 	albumentations.ChannelShuffle(),
+				# 	albumentations.NoOp()]),
+				albumentations.HorizontalFlip(0.5),
 				albumentations.Normalize(mean=[0.275, 0.278, 0.284], std=[0.170, 0.171, 0.173]),
-				albumentations.RandomCrop(224, 224),
+				albumentations.Resize(250,250),
+				albumentations.RandomSizedCrop((200,250),224,224,w2h_ratio=1.),
+				albumentations.RandomCrop(224,224),
 				ToTensor()])
 		val_transforms = albumentations.Compose([
+			albumentations.CLAHE(),
 			albumentations.Resize(250, 250),
 			albumentations.CenterCrop(224, 224),
 			albumentations.Normalize(mean=[0.275, 0.278, 0.284], std=[0.170, 0.171, 0.173]),
 			ToTensor()
 		])
-		target_transform = get_target_transform()
 	elif dataset.startswith('tsne'):
 		trans=transforms.Compose([
 			transforms.ToTensor(),
@@ -105,12 +111,6 @@ def preprocess_strategy(dataset='ImageNet'):
 	return train_transforms, val_transforms
 
 
-def preprocess_strategy_with_mask():
-	return ImgAugTransform(input_size=250, crop_size=224, )
-
-
-def get_target_transform():
-	pass
 
 
 class ImgAugTransform:

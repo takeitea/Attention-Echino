@@ -1,6 +1,6 @@
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
-
+import torch
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
 		   'resnet152']
 
@@ -96,7 +96,7 @@ class Bottleneck(nn.Module):
 
 class ResNet(nn.Module):
 
-	def __init__(self, block, layers, num_classes=1000, zero_init_residual=True):
+	def __init__(self, block, layers, num_classes=9, zero_init_residual=True):
 		super(ResNet, self).__init__()
 		self.inplanes = 64
 		self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
@@ -157,7 +157,6 @@ class ResNet(nn.Module):
 		feature1 = x
 		x = self.avgpool(x)
 		x = x.view(x.size(0), -1)
-		# x = nn.Dropout(p=0.5)(x)
 		feature2 = x
 		x = self.fc(x)
 		return x, feature1, feature2
@@ -173,10 +172,14 @@ def resnet18(pretrained=False, **kwargs):
 	model = ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
 	if pretrained:
 		old_dict = model.state_dict()
-		new_dict = model_zoo.load_url(model_urls['resnet18'])
+		new_dict=torch.load('./result/ResNet18_aloss/model_best.pth.tar')["state_dict"]
+		# new_dict = model_zoo.load_url(model_urls['resnet18'])
 		for k, v in new_dict.items():
-			if k in old_dict.keys() and old_dict[k].size() == new_dict[k].size():
-				old_dict[k] = v
+			# if k in old_dict.keys() and old_dict[k].size()==new_dict[k].size():
+				# old_dict[k]=v
+			# k=k[7:]
+			if k[7:] in old_dict.keys() and old_dict[k[7:]].size() == new_dict[k].size():
+				old_dict[k[7:]] = v
 		old_dict.update()
 		model.load_state_dict(old_dict, strict=False)
 	return model

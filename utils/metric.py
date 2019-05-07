@@ -84,8 +84,8 @@ def accuracy_lstm(output, target, dir, path, topk=(1,)):
 	:return:
 	"""
 	with torch.no_grad():
-		# output = output.view(output.size(0), output.size(1), -1)
-		# output = torch.mean(output, dim=1)
+		output = output.view(output.size(0), output.size(1), -1)
+		output = torch.mean(output, dim=1)
 		maxk = max(topk)
 		batch_size = target.size(0)
 		_, pred = output.topk(maxk, 1)

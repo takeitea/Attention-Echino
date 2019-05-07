@@ -23,6 +23,7 @@ for folder in [train,val,all]:
 
 for image_path in glob.glob(imagefolder):
 	classes,subfolder,image=image_path.split('/')[-3:]
+	print(classes)
 	shutil.copy(image_path,os.path.join(all,classes,image))
 	if np.random.randn()>0.8:
 		shutil.copy(image_path,os.path.join(val,classes,image))

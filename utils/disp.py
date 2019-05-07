@@ -92,10 +92,10 @@ class Stats:
 		self.valTop1.append(prec1.cpu().numpy())
 		self.valTop2.append(prec2.cpu().numpy())
 
-	def get_last5(self):
+	def get_lastn(self,n=5):
 
-		self.last5prec1=np.mean(self.valTop1[self.total_epoch - 5:self.total_epoch])
-		self.last5prec2=np.mean(self.valTop2[self.total_epoch - 5:self.total_epoch])
+		self.last5prec1=np.mean(self.valTop1[self.total_epoch - n:self.total_epoch])
+		self.last5prec2=np.mean(self.valTop2[self.total_epoch - n:self.total_epoch])
 		print("last 5 epochs mean top1 {}".format(self.last5prec1))
 		print("last l epochs mean top2 {}".format(self.last5prec2))
 

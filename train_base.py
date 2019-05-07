@@ -1,20 +1,21 @@
 import argparse
 import json
 import os
+from pytorchcv.model_provider import get_model as ptcv_get_model
+
 import shutil
 import time
 import scipy.io as sio
 import torch
+import torch.nn as nn
 import torch.optim as optim
-
 from data import get_data
 from loss import Auxiliary_Loss,ComEnLoss
-from model import drn_c_26,EchiNet_18
+from model import resnet18,EchiNet_18,drn_c_26,shufflenetv2,drn_a_50
 from utils import AvgMeter, accuracy, plot_curve, restore
-from utils import SAVE_ATTEN
 from utils import Stats, save_checkpoint,Learning_rate_generater
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "4,5,6,7"
+os.environ["CUDA_VISIBLE_DEVICES"] = "5,2,3,4"
 
 
 
@@ -22,19 +23,22 @@ def arg_pare():
 	arg = argparse.ArgumentParser(description=" args of base")
 	arg.add_argument('-bs', '--batch_size', help='batch size', default=40)
 	arg.add_argument('--store_per_epoch', default=False)
-	arg.add_argument('--epochs', default=50)
+	arg.add_argument('--epochs', default=25)
 	arg.add_argument('--num_classes', default=9, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.001)
-	arg.add_argument('-att', '--attention', help='whether to use attention', default=True)
 	arg.add_argument('--img_size', help='the input size', default=224)
-	arg.add_argument('--dir', help='the dataset root', default='./datafolder/c9_224/')
+	arg.add_argument('--dir',help="",default='./datafolder/c9_224/')
+	# arg.add_argument('--dir',help="",default= './datafolder/grade/CLCE1/')
+	# arg.add_argument('--dir', help='the dataset root',default= '/home/whx/dataset_maker/VOC_maker/detect_roi/roi_padding_224/CE234/')
 	arg.add_argument('--print_freq', default=180, help='the frequency of print infor')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='Echi224')
+	arg.add_argument('--aug',help="whether to augment ",default=True)
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='drk53_aug')
 	arg.add_argument('-j', '--workers', default=32, type=int, metavar='N', help='# of workers')
 	arg.add_argument('--lr_method',default='step',help='method of learn rate')
 	arg.add_argument('--gpu', default=4, type=str)
 	arg.add_argument('--evaluate', default=False, help='whether to evaluate only')
-	arg.add_argument('--resume', default='./result/drc_aloss/model_best.pth.tar', help="whether to load checkpoint")
+	arg.add_argument('--resume',default=False)
+	# arg.add_argument('--resume', default='./aug_18_224_CE2CE3CE4/model_best.pth.tar', help="whether to load checkpoint")
 	arg.add_argument('--start_epoch', default=0)
 	return arg.parse_args()
 
@@ -45,12 +49,15 @@ def main():
 	best_prec1 = 0
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
-	model =EchiNet_18().cuda()
-	# model.fc=torch.nn.Linear(512,9).cuda()
-
+	# model=(pretrained=True)
+	model=ptcv_get_model( "darknet53",pretrained=False)
+	model.load_state_dict(torch.load("./model/darknet53.pth"))
+	# model.load_state_dict(torch.load('./model/shufflenetv2_x1.pth.tar'))
+	# model.classifier=  nn.Sequential(nn.Linear(model.stage_out_channels[-1], args.num_classes))
+	model.fc=nn.Linear(2048,9)
 	model.cuda()
-	LR = Learning_rate_generater('step', [30,45], args.epochs,args)
-	LR.plot_lr()
+	LR = Learning_rate_generater('step', [15,20], args.epochs,args)
+
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=1e-4)
 	# cmopt=optim.SGD(model.parameters(),lr=args.lr,momentum=0.9,weight_decay=1e-4)
 	print(args)
@@ -58,9 +65,10 @@ def main():
 	if args.evaluate:
 		restore(args, model, opt,  istrain=not args.evaluate)
 	model = torch.nn.DataParallel(model, range(args.gpu))
-	trainloader, valloader = get_data(args)
+	trainloader, valloader,test_loader = get_data(args)
 	critertion = torch.nn.CrossEntropyLoss()
-
+	if args.test:
+		evaluate(test_loader,model,critertion,args,True)
 	if args.evaluate:
 		evaluate(valloader, model, critertion,args,True)
 		return
@@ -102,15 +110,15 @@ def train(trainloader, model, criterion, optimizer, epoch):
 	top2 = AvgMeter()
 	model.train()
 	end = time.time()
-	aloss=Auxiliary_Loss()
+	aloss=Auxiliary_Loss(k=2)
 	# cmloss=ComEnLoss()
 
 	for i, (input, target) in enumerate(trainloader):
 		data_time.update(time.time() - end)
 		input, target = input.cuda(), target.cuda()
-		out1= model(input)
+		out1,_= model(input)
 
-		loss = criterion(out1, target)+5*aloss(out1,target)
+		loss = criterion(out1, target)+2*aloss(out1,target)
 		prec1, prec2 = accuracy(out1, target,topk=(1, 2))
 		losses.update(loss.item(), input.size(0))
 		top1.update(prec1[0], input.size(0))
@@ -138,6 +146,7 @@ def train(trainloader, model, criterion, optimizer, epoch):
 
 
 def evaluate(valloader, model, criterion,args,is_last):
+	id2class = {id: class_ for class_, id in valloader.dataset.class_to_idx.items()}
 	batch_time = AvgMeter()
 	losses = AvgMeter()
 	top1 = AvgMeter()
@@ -147,15 +156,12 @@ def evaluate(valloader, model, criterion,args,is_last):
 	data['path'] = []
 	data['feature'] = []
 	data['label'] = []
-	save_atten=SAVE_ATTEN('./save_c9',dataset='c9')
 	with torch.no_grad():
 		end = time.time()
 		for i, (input, target,path) in enumerate(valloader):
 			input = input.cuda()
 			target=target.cuda()
-			output1= model(input)
-
-
+			output1,_= model(input)
 			loss = criterion(output1, target)
 			prec1, prec2 = accuracy(output1, target, topk=(1, 2))
 			if is_last:
@@ -169,7 +175,8 @@ def evaluate(valloader, model, criterion,args,is_last):
 				data['feature'].extend(output1.cpu().numpy().tolist())
 				data['label'].extend([int(i) for i in target.numpy()])
 				# model.saved_erased_img(img_path=path)
-				save_txt(np_scores,pred_labels,path)
+
+				save_txt(np_scores,pred_labels,path,id2class)
 			losses.update(loss.item(), input.size(0))
 			top1.update(prec1[0], input.size(0))
 			top2.update(prec2[0], input.size(0))
@@ -190,10 +197,10 @@ def evaluate(valloader, model, criterion,args,is_last):
 
 
 
-def save_txt(np_score,np_pred,path):
-	with open('result.txt','a') as L:
-		L.write(str(path)+str(np_score[0])+ str(np_score[1])+str(np_pred[0])+str(np_pred[1])+'\n')
-
+def save_txt(np_score,np_pred,path,id2class):
+	with open('CE2CE3CE4.txt','a') as L:
+		for path_,pred,score in zip(path,np_pred,np_score):
+			L.write((path_.split('/')[-1]+' '+id2class[pred[0]]+' '+id2class[pred[1]]+' '+str(score[0])+' '+str(score[1])+'\n'))
 
 if __name__ == '__main__':
 	main()

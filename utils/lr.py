@@ -9,7 +9,7 @@ class Learning_rate_generater(object):
 
 	def __init__(self, method, params, total_epoch,args):
 		self.args = args
-		self.warm_up = True
+		self.warm_up = False
 		if method == 'step':
 			lr_factor, lr = self.step(params, total_epoch)
 		elif method == 'log':
@@ -83,6 +83,7 @@ class Learning_rate_generater(object):
 		for params_group in optimizer.param_groups:
 			params_group['lr'] = lr_factor[epoch] *self.args.lr
 
+
 	def cos_anneal_lr(self,optimizer, lr, epoch):
 		"""
 		:param optimizer:
@@ -90,5 +91,7 @@ class Learning_rate_generater(object):
 		:param epoch:
 		:return:
 		"""
+		print('the lr is set to {0:.5f}'.format(lr[epoch]))
+
 		for params_group in optimizer.param_groups:
 			params_group['lr'] = lr[epoch]

@@ -93,18 +93,18 @@ class HEM_Loss(nn.CrossEntropyLoss):
 		target_hardsample = target.index_select(0, idxs)
 		return F.cross_entropy(output_hardsample, target_hardsample)
 
-
 class Auxiliary_Loss(nn.CrossEntropyLoss):
 	"""
 	TO calculate the  top-2 k loss
 	which means that the most difficult  categories
 	"""
 
-	def __init__(self):
+	def __init__(self,k=2):
+		self.k=k
 		super(Auxiliary_Loss, self).__init__()
 
 	def forward(self, output, target):
-		_, pred = output.topk(2, 1)
+		_, pred = output.topk(self.k, 1)
 		pred = pred.t()
 		idxs = []
 		for inx, label in enumerate(target.data):
@@ -115,8 +115,45 @@ class Auxiliary_Loss(nn.CrossEntropyLoss):
 			return Variable(torch.zeros(1).cuda())
 		output_hard = output.index_select(0, idxs)
 		target_hard = target.index_select(0, idxs)
-		return F.cross_entropy(output_hard, target_hard)
+		return F.cross_entropy(output_hard, target_hard)+F.mse_loss()
+class Auxiliary_Loss_Seq(nn.CrossEntropyLoss):
 
+	def __init__(self,k=2):
+		self.k=k
+		super(Auxiliary_Loss_Seq,self).__init__()
+	def forward(self, output, target):
+
+		loss = torch.autograd.Variable(torch.zeros(1), ).cuda()
+		parts = torch.chunk(output, 5, dim=1)
+		for part in parts:
+			idxs = []
+			part=part.squeeze(1)
+			_, pred = part.topk(self.k, 1)
+			pred = pred.t()
+			for inx, label in enumerate(target.data):
+				if label in pred[:, inx]:
+					idxs.append(inx)
+			if len(idxs):
+				idxs = torch.Tensor(idxs).cuda().long()
+				output_hard = part.index_select(0, idxs)
+				target_hard = target.index_select(0, idxs)
+
+				loss+=F.cross_entropy(output_hard, target_hard)
+		return loss/output.size(1)
+class Auxiliary_Loss_Seq_CC(nn.CrossEntropyLoss):
+
+	def __init__(self,k=2):
+		self.k=k
+		super(Auxiliary_Loss_Seq_CC,self).__init__()
+	def forward(self, output, target):
+		target = torch.eye(2)[target.long()].cuda()
+		loss = torch.autograd.Variable(torch.zeros(1), ).cuda()
+		parts = torch.chunk(output, 5, dim=1)
+		for part in parts:
+			part=part.squeeze(1)
+			# part=F.log_softmax(part,dim=1)
+			loss+=F.mse_loss(part,target)
+		return loss/output.size(1)
 class IMAE(nn.Module):
 	def __init__(self,T):
 		super(IMAE,self).__init__()
@@ -125,7 +162,7 @@ class IMAE(nn.Module):
 	def forward(self, output,target):
 		batchsize=output.size(0)
 		logits=F.softmax(output,dim=1)
-		onehot=torch.eye(9)[target].cuda()
+		onehot=torch.eye(2)[target].cuda()
 		l1_loss=F.smooth_l1_loss(logits,onehot,reduction="none")
 		logits=torch.cat([ logits[i,k].unsqueeze(0) for i,k in zip(range(batchsize),target)])
 		weight=torch.exp(self.T*logits*(1-logits))

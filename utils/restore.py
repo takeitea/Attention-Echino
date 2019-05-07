@@ -29,7 +29,7 @@ def restore(args, model, optimizer, istrain=True, including_opt=False):
 				if k in old_state_dict.keys():
 					model.load_state_dict(checkpoint['state_dict'])
 					return
-				else:
+				elif k[7:] in old_state_dict.keys():
 					old_state_dict[k[7:]]=v
 
 			old_state_dict.update()

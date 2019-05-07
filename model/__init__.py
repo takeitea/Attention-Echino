@@ -17,3 +17,6 @@ from .nasnet_mobile import nasnetamobile
 # from .prec_resnet import PreActResNet18
 from .unet_model import UNet
 from .EchiNet import EchiNet_18
+from .ShuffleNetV2 import shufflenetv2
+from .REnet import REnet
+from .res2net import se_res2net50,res2next29_6cx24wx4scale

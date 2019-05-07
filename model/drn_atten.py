@@ -1,4 +1,3 @@
-import pdb
 import numpy as np
 import torch.nn.functional as F
 import os
@@ -9,8 +8,6 @@ import math
 import torch.utils.model_zoo as model_zoo
 import cv2
 BatchNorm = nn.BatchNorm2d
-
-# __all__ = ['DRN', 'drn26', 'drn42', 'drn58']
 
 
 webroot = 'https://tigress-web.princeton.edu/~fy/drn/models/'
