@@ -21,15 +21,15 @@ def arg_pare():
 	arg.add_argument('--num_classes', default=9, type=int)
 	arg.add_argument('--lr', help='learn rate', default=0.001)
 	arg.add_argument('--print_freq', default=180, help='the frequency of print information')
-	arg.add_argument('--modeldir', help=' the model viz dir ', default='train_darkn_lstm_padding_aug_degub')
+	arg.add_argument('--modeldir', help=' the model viz dir ', default='train_darkn_lstm_padding')
 	arg.add_argument('--lr_method', help='method of learn rate')
 	arg.add_argument('--gpu', default=3, type=str)
-	arg.add_argument('--test',default=False)
+	arg.add_argument('--test',default=True)
 	arg.add_argument('--evaluate', default=False, help='whether to evaluate only')
-	# arg.add_argument('--resume',default='./train_darkn_lstm_padding_aug_best/model_best.pth.tar')
-	arg.add_argument('--resume', default=False, help="whether to load checkpoint")
+	arg.add_argument('--resume',default='./train_darkn_lstm_padding_best/model_best.pth.tar')
+	# arg.add_argument('--resume', default=False, help="whether to load checkpoint")
 	arg.add_argument('--start_epoch', default=0)
-	arg.add_argument('--sub',help='subclass num',default=0)
+	arg.add_argument('--sub',help='subclass num',default='')
 	arg.add_argument('--weight_decay', default=1e-4)
 	return arg.parse_args()
 
@@ -39,9 +39,9 @@ subclass=[['CL','CE1'],['CE2','CE3','CE4'],['AE1','AE2','AE3']]
 def main():
 	print('\n loading the dataset ... \n')
 	print('\n done \n')
-	model = REnet(num_classes=len(subclass[args.sub])).cuda()
+	model = REnet().cuda()
 	# model.pretrained_model.load_state_dict(torch.load('./result/ResNet18_aloss/model_best.pth.tar')["state_dict"])
-	LR = Learning_rate_generater('step', [7, 15], args.epochs,args)
+	LR = Learning_rate_generater('step', [12,17 ], args.epochs,args)
 	# LR.plot_lr()
 
 	opt = optim.SGD(model.parameters(), lr=args.lr, momentum=0.90, weight_decay=args.weight_decay)
@@ -56,7 +56,7 @@ def main():
 	multiloss=MultiLoss().cuda()
 	critertion = torch.nn.CrossEntropyLoss().cuda()
 	if args.test:
-		test(valloader,model,args=args)
+		test(testloader,model,args=args)
 		return
 	if args.evaluate:
 		evaluate(valloader, model, critertion,is_last=True,args=args,epoch=args.epochs)
@@ -100,7 +100,7 @@ def train(trainloader, model, criterion, optimizer, epoch, multiloss):
 		optimizer.zero_grad()
 		input, target = input.cuda(), target.cuda()
 		lstm_out = model(input)
-		loss=multiloss(lstm_out,target)+2*aloss(lstm_out,target)
+		loss=multiloss(lstm_out,target)
 		loss.backward()
 		optimizer.step()
 		prec1, prec2 = accuracy_lstm(lstm_out, target,args.modeldir, path=None, topk=(1, 2))

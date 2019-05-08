@@ -15,7 +15,7 @@ class REnet(nn.Module):
 		self.lstm1=nn.LSTM(1024,128,batch_first=True,num_layers=1,bidirectional=False,bias=False)
 		self.lstm2=nn.LSTM(128,128,batch_first=True,num_layers=1,bidirectional=False,bias=False)
 		self.fc=nn.Linear(128,self.num_classes)
-		self.n_part=4
+		self.n_part=6
 
 	def forward(self, x):
 

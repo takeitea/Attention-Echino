@@ -8,7 +8,7 @@ subclass2=['AE1','AE2','AE3']
 root='/data/wen/data/C9/'
 
 train='train.txt'
-test='test.txt'
+test='output.txt'
 sub_train=['test_sub'+str(i)+'.txt' for i in range(3)]
 
 

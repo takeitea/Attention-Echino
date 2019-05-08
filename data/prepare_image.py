@@ -48,22 +48,22 @@ class ResizePadding(object):
 
 
 if __name__ == '__main__':
-	transform = ResizePadding()
-	# image1 = np.ones([255, 270, 3], dtype=np.uint8) * 255
-	# image2 = np.ones([85, 90, 3], dtype=np.uint8) * 255
-	# image3 = np.ones([305, 100, 3], dtype=np.uint8) * 255
-	# image4 = np.ones([105, 300, 3], dtype=np.uint8) * 255
-	# image5 = np.ones([95, 80, 3], dtype=np.uint8) * 255
-	# for img in [image1, image2, image3,image4,image5]:
-	# 	print(img.shape)
-	# 	plt.imshow(img)
-	# 	plt.show()
-	#
-	# 	print(transform.transform(img).shape)
-	# 	plt.imshow(transform.transform(img))
-	# 	plt.show()
-	folder="../datafolder/c9_250/*/*/*.jpg"
-	for image_path in glob.glob(folder):
-		image =cv2.imread(image_path)
-		image=transform.transform(image)
-		cv2.imwrite(image_path,image)
+	transform = ResizePadding(size=200)
+	image1 = np.ones([255, 270, 3], dtype=np.uint8) * 255
+	image2 = np.ones([85, 90, 3], dtype=np.uint8) * 255
+	image3 = np.ones([305, 100, 3], dtype=np.uint8) * 255
+	image4 = np.ones([105, 300, 3], dtype=np.uint8) * 255
+	image5 = np.ones([95, 80, 3], dtype=np.uint8) * 255
+	for img in [image1, image2, image3,image4,image5]:
+		print(img.shape)
+		plt.imshow(img)
+		plt.show()
+
+		print(transform.transform(img).shape)
+		plt.imshow(transform.transform(img))
+		plt.show()
+	# folder="../datafolder/c9_250/*/*/*.jpg"
+	# for image_path in glob.glob(folder):
+	# 	image =cv2.imread(image_path)
+	# 	image=transform.transform(image)
+	# 	cv2.imwrite(image_path,image)

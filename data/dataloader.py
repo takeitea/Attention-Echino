@@ -59,43 +59,45 @@ def get_data(args):
 
 
 class Detectfolder(Dataset):
-	def __init__(self, is_train=True, transfer=None,aug=False,test=False,outsample=False,big=False,sub=-1):
+	def __init__(self, is_train=True, transfer=None,aug=False,test=False,outsample=False,big=False,sub=''):
 		self.root = '/data/wen/data/C9/'
 		self.test=test
 		self.outsample=outsample
+		pre='aug' if aug else ''
+		pre='big'+pre if big else pre
+		# assert not (is_train  and test)
+		# assert not (aug and big)
 		if is_train:
-			if aug:
-				self.anno_path=self.root+'train_aug.txt'
-				self.image_path=self.root+'train_aug'
-				if big:
-					self.anno_path=self.root+'train_big_aug.txt'
-					self.image_path=self.root+'train_big_aug'
-			else:
-				if sub>-1:
-					self.anno_path = self.root + 'train_sub'+str(sub)+'.txt'
-				else:
-					self.anno_path=self.root+'train.txt'
-				self.image_path = self.root + 'train'
-		else:
-			if test:
+			self.anno_path=self.root+'train' +pre+'.txt'
+			self.image_path=self.root+'train'+pre
+			if sub:
+				self.anno_path = self.root+pre+'/sub'+sub+'.txt'
+				if aug:
+					self.image_path = self.root +pre+'sub' +sub
+		elif test:
 
-				self.anno_path = self.root + 'output.txt'
-			else:
-				if sub>-1:
-
-					self.anno_path=self.root+'test_sub'+str(sub)+'.txt'
-				else:
-					self.anno_path=self.root+'test.txt'
+			self.anno_path = self.root + 'output.txt'
+			if sub:
+				self.anno_path=self.root+'test_sub'+sub+'.txt'
 			self.image_path = self.root + 'test'
+		else:
+			if sub:
+				self.anno_path=self.root+'test_sub'+sub+'.txt'
+			else:
+				self.anno_path=self.root+'test.txt'
+			self.image_path = self.root + 'test'
+
 		self.name2id = {'AE1': 0, 'AE2': 1, 'AE3': 2, 'CE1': 3, 'CE2': 4, 'CE3': 5, 'CE4': 6, 'CE5': 7, 'CL': 8}
-		if sub>-1:
+		if sub:
 			subclass = [['CL', 'CE1'], ['CE2', 'CE3', 'CE4'], ['AE1', 'AE2', 'AE3']]
-			self.name2id={ subclass[sub][i]:i for i in range(len(subclass[sub]))}
+			self.name2id={ subclass[int(sub)][i]:i for i in range(len(subclass[int(sub)]))}
 		self.id2name = {self.name2id[k]: k for k in self.name2id.keys()}
 		self.samples = []
 		self.image_size = [224, 224]
 		self.trans = transfer
-		self.resizepadding=ResizePadding()
+		self.small=ResizePadding(size=200)
+		self.middle=ResizePadding(size=250)
+		self.large=ResizePadding(size=300)
 		for line in open(self.anno_path, 'r').readlines():
 			if aug and is_train:
 				sample=line.strip().split(' ')[:]
@@ -123,16 +125,21 @@ class Detectfolder(Dataset):
 		full_image = image[y1:y2, x1:x2,:].copy()
 		zoomin_image=image[int(y1+0.1*(y2-y1)):int(y2-0.1*(y2-y1)),int(x1+0.1*(x2-x1)):int(x2-0.1*(x2-x1)),:].copy()
 		zoomout_image=image[max(0,int(y1-0.1*(y2-y1))):min(image_size[0],int(y2+0.1*(y2-y1))),max(0,int(x1-0.1*(x2-x1))):
-					  min(image_size[1],int(x2+0.1*(x2-x1))),:].copy()
-		paddiing_image=self.resizepadding.transform(full_image.copy())
+		 			  min(image_size[1],int(x2+0.1*(x2-x1))),:].copy()
+		small_image=self.small.transform(full_image.copy())
+		middle_image=self.middle.transform(full_image.copy())
+		large_image=self.large.transform(full_image.copy())
 		target = self.name2id[sample[1]]
-		if self.trans:
-			zoomin_image=self.trans(Image.fromarray(zoomin_image))
-			zoomout_image=self.trans(Image.fromarray(zoomout_image))
-			paddiing_image=self.trans(Image.fromarray(paddiing_image))
-			full_image=self.trans(Image.fromarray(full_image))
 
-		inputs=torch.stack(( full_image,zoomin_image,zoomout_image ,paddiing_image),dim=0)
+		if self.trans:
+			small_image=self.trans(Image.fromarray(small_image))
+			middle_image=self.trans(Image.fromarray(middle_image))
+			large_image=self.trans(Image.fromarray(large_image))
+			full_image=self.trans(Image.fromarray(full_image))
+			zoomout_image=self.trans(Image.fromarray(zoomout_image))
+			zoomin_image=self.trans(Image.fromarray(zoomin_image))
+
+		inputs=torch.stack(( zoomin_image,zoomout_image,full_image,small_image,middle_image ,large_image),dim=0)
 		if self.outsample:
 			return inputs,target,sample
 		return inputs, target
@@ -141,7 +148,7 @@ def get_RE_data(args):
 	trans_train, val_train = preprocess_strategy()
 	trainset = Detectfolder(is_train=True, transfer=trans_train,sub=args.sub)
 	valset = Detectfolder(is_train=False, transfer=val_train,outsample=True,sub=args.sub)
-	test=Detectfolder(is_train=False,transfer=val_train,test=args.test,sub=args.sub)
+	test=Detectfolder(is_train=False,transfer=val_train,test=args.test,sub=args.sub,outsample=True)
 	trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, num_workers=32,
 											  pin_memory=True)
 	valloader = torch.utils.data.DataLoader(valset, batch_size=50, shuffle=False, num_workers=32,

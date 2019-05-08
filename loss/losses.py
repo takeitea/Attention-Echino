@@ -63,7 +63,7 @@ class MultiLoss(nn.CrossEntropyLoss):
 	def forward(self, output, target):
 		loss = torch.autograd.Variable(torch.zeros(1), ).cuda()
 
-		parts = torch.chunk(output, 5, dim=1)
+		parts = torch.chunk(output, 6, dim=1)
 		for part in parts:
 			loss += F.cross_entropy(part.squeeze(1), target)
 		return loss
