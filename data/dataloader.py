@@ -82,7 +82,7 @@ class Detectfolder(Dataset):
 			self.image_path = self.root + 'test'
 		else:
 			if sub:
-				self.anno_path=self.root+'test_sub'+sub+'.txt'
+				self.anno_path=self.root+'validate/test_sub'+sub+'.txt'
 			else:
 				self.anno_path=self.root+'test.txt'
 			self.image_path = self.root + 'test'
@@ -117,13 +117,14 @@ class Detectfolder(Dataset):
 		image_path = os.path.join(self.image_path, name)
 
 		image = cv2.imread(image_path)
-
+		if image  is None:
+			raise RuntimeError("image {} not find".format(image_path))
 		image = np.array(image, dtype=np.uint8)
 		image_size = image.shape
 		x1, y1, x2, y2 = map(int,sample[2:])
 
 		full_image = image[y1:y2, x1:x2,:].copy()
-		zoomin_image=image[int(y1+0.1*(y2-y1)):int(y2-0.1*(y2-y1)),int(x1+0.1*(x2-x1)):int(x2-0.1*(x2-x1)),:].copy()
+		# zoomin_image=image[int(y1+0.1*(y2-y1)):int(y2-0.1*(y2-y1)),int(x1+0.1*(x2-x1)):int(x2-0.1*(x2-x1)),:].copy()
 		zoomout_image=image[max(0,int(y1-0.1*(y2-y1))):min(image_size[0],int(y2+0.1*(y2-y1))),max(0,int(x1-0.1*(x2-x1))):
 		 			  min(image_size[1],int(x2+0.1*(x2-x1))),:].copy()
 		small_image=self.small.transform(full_image.copy())
@@ -137,9 +138,9 @@ class Detectfolder(Dataset):
 			large_image=self.trans(Image.fromarray(large_image))
 			full_image=self.trans(Image.fromarray(full_image))
 			zoomout_image=self.trans(Image.fromarray(zoomout_image))
-			zoomin_image=self.trans(Image.fromarray(zoomin_image))
+			# zoomin_image=self.trans(Image.fromarray(zoomin_image))
 
-		inputs=torch.stack(( zoomin_image,zoomout_image,full_image,small_image,middle_image ,large_image),dim=0)
+		inputs=torch.stack((zoomout_image,full_image,small_image,middle_image ,large_image),dim=0)
 		if self.outsample:
 			return inputs,target,sample
 		return inputs, target
